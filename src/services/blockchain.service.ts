@@ -1,41 +1,55 @@
-import { CONTRACT_ADDRESSES, RPC_URLS, NETWORK_CONFIG } from '@/config/constants';
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESSES, NETWORK_CONFIG } from '@/config/constants';
 import type { UserOperation } from '@/types';
 
 class BlockchainService {
-  private rpcUrl: string;
+  private provider: ethers.JsonRpcProvider;
   private chainId: number;
+  private rpcUrl: string;
 
   constructor() {
-    this.rpcUrl = NETWORK_CONFIG.CHAIN_ID === 5000 ? RPC_URLS.MANTLE_MAINNET : RPC_URLS.MANTLE_TESTNET;
+    this.rpcUrl = NETWORK_CONFIG.RPC_URL;
     this.chainId = NETWORK_CONFIG.CHAIN_ID;
+    this.provider = new ethers.JsonRpcProvider(this.rpcUrl);
   }
 
   /**
-   * Get provider (ethers.js or viem)
+   * Get provider instance
    */
-  getProvider() {
-    // This will be implemented with actual provider (ethers.js or viem)
-    // For now, return null as placeholder
-    return null;
+  getProvider(): ethers.JsonRpcProvider {
+    return this.provider;
+  }
+
+  /**
+   * Get signer from private key
+   */
+  getSigner(privateKey: string): ethers.Wallet {
+    return new ethers.Wallet(privateKey, this.provider);
   }
 
   /**
    * Get contract instance
    */
-  getContract(address: string, abi: any) {
-    // This will be implemented with actual contract instance
-    // For now, return null as placeholder
-    return null;
+  getContract(address: string, abi: readonly string[]): ethers.Contract {
+    return new ethers.Contract(address, abi, this.provider);
+  }
+
+  /**
+   * Get contract instance with signer
+   */
+  getContractWithSigner(address: string, abi: readonly string[], signer: ethers.Signer): ethers.Contract {
+    return new ethers.Contract(address, abi, signer);
   }
 
   /**
    * Send UserOperation to bundler (ERC-4337)
+   * Note: This requires a bundler endpoint. For now, we'll use direct transactions.
    */
   async sendUserOperation(userOp: UserOperation): Promise<{ userOpHash: string }> {
     try {
-      // This will be implemented with actual bundler integration
-      // For now, return placeholder
-      throw new Error('Not implemented yet');
+      // TODO: Implement bundler integration when available
+      // For now, throw error as this requires a bundler service
+      throw new Error('Bundler integration not yet implemented. Use direct contract calls instead.');
     } catch (error) {
       throw error;
     }
@@ -44,23 +58,9 @@ class BlockchainService {
   /**
    * Get transaction receipt
    */
-  async getTransactionReceipt(txHash: string): Promise<any> {
+  async getTransactionReceipt(txHash: string): Promise<ethers.TransactionReceipt | null> {
     try {
-      const response = await fetch(this.rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_getTransactionReceipt',
-          params: [txHash],
-          id: 1,
-        }),
-      });
-
-      const result = await response.json();
-      return result.result;
+      return await this.provider.getTransactionReceipt(txHash);
     } catch (error) {
       throw error;
     }
@@ -71,21 +71,29 @@ class BlockchainService {
    */
   async getBlockNumber(): Promise<number> {
     try {
-      const response = await fetch(this.rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_blockNumber',
-          params: [],
-          id: 1,
-        }),
-      });
+      return await this.provider.getBlockNumber();
+    } catch (error) {
+      throw error;
+    }
+  }
 
-      const result = await response.json();
-      return parseInt(result.result, 16);
+  /**
+   * Get balance of an address
+   */
+  async getBalance(address: string): Promise<bigint> {
+    try {
+      return await this.provider.getBalance(address);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Wait for transaction confirmation
+   */
+  async waitForTransaction(txHash: string, confirmations: number = 1): Promise<ethers.TransactionReceipt | null> {
+    try {
+      return await this.provider.waitForTransaction(txHash, confirmations);
     } catch (error) {
       throw error;
     }
@@ -103,6 +111,18 @@ class BlockchainService {
    */
   getNetworkConfig() {
     return NETWORK_CONFIG;
+  }
+
+  /**
+   * Check if address is a contract
+   */
+  async isContract(address: string): Promise<boolean> {
+    try {
+      const code = await this.provider.getCode(address);
+      return code !== '0x' && code !== '0x0';
+    } catch (error) {
+      return false;
+    }
   }
 }
 

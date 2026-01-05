@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { walletService } from '@/services/wallet.service';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,16 +11,26 @@ import Link from 'next/link';
 
 export default function SendPage() {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { walletAddress, isUnlocked, loading: authLoading } = useWalletAuth();
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
+  const [password, setPassword] = useState('');
   const [transferType, setTransferType] = useState<'transparent' | 'private'>('transparent');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  if (!isAuthenticated) {
-    router.push('/auth/login');
+  useEffect(() => {
+    if (!authLoading) {
+      if (!walletAddress) {
+        router.push('/');
+      } else if (!isUnlocked) {
+        router.push('/wallet/unlock');
+      }
+    }
+  }, [authLoading, walletAddress, isUnlocked, router]);
+
+  if (authLoading || !walletAddress || !isUnlocked) {
     return null;
   }
 
@@ -31,25 +41,33 @@ export default function SendPage() {
     setLoading(true);
 
     try {
-      if (!user?.accountAddress) {
-        setError('Account address not found');
+      if (!password) {
+        setError('Please enter your password to sign the transaction');
         return;
       }
 
       let result;
       if (transferType === 'private') {
         // For private transfer, recipient is a commitment
-        result = await walletService.sendPrivateTransfer(user.accountAddress, {
+        result = await walletService.sendPrivateTransfer(
+          walletAddress,
+          {
           recipientCommitment: recipient,
           nullifier: '', // Will be generated
           amount,
           proof: '', // Will be generated
-        });
+          },
+          password
+        );
       } else {
-        result = await walletService.sendTransparentTransfer(user.accountAddress, {
+        result = await walletService.sendTransparentTransfer(
+          walletAddress,
+          {
           to: recipient,
           amount,
-        });
+          },
+          password
+        );
       }
 
       if (result.success && result.data) {
@@ -138,6 +156,17 @@ export default function SendPage() {
               required
               placeholder="0.0"
               min="0"
+            />
+
+            {/* Password Input */}
+            <Input
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Enter your password"
+              helperText="Required to sign the transaction"
             />
 
             {error && (

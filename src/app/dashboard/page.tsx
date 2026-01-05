@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { useWallet } from '@/hooks/useWallet';
 import { BalanceCard } from '@/components/wallet/BalanceCard';
 import { Button } from '@/components/ui/Button';
@@ -10,16 +10,20 @@ import Link from 'next/link';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
+  const { walletAddress, isUnlocked, loading: authLoading, lock } = useWalletAuth();
   const { balance, transactions, loading: walletLoading, refreshBalance } = useWallet(
-    user?.accountAddress || null
+    walletAddress
   );
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/auth/login');
+    if (!authLoading) {
+      if (!walletAddress) {
+        router.push('/');
+      } else if (!isUnlocked) {
+        router.push('/wallet/unlock');
+      }
     }
-  }, [authLoading, isAuthenticated, router]);
+  }, [authLoading, walletAddress, isUnlocked, router]);
 
   if (authLoading) {
     return (
@@ -29,7 +33,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!walletAddress || !isUnlocked) {
     return null;
   }
 
@@ -41,12 +45,15 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">VeilWallet</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {user?.email} • {user?.accountAddress ? `${user.accountAddress.slice(0, 6)}...${user.accountAddress.slice(-4)}` : ''}
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : ''}
               </p>
             </div>
-            <Button variant="outline" onClick={() => logout()}>
-              Logout
+            <Button variant="outline" onClick={() => {
+              lock();
+              router.push('/wallet/unlock');
+            }}>
+              Lock Wallet
             </Button>
           </div>
         </div>

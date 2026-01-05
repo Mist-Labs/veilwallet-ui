@@ -76,12 +76,12 @@ src/
 
 ### Prerequisites
 - Node.js 18+ 
-- npm or yarn
+- pnpm
 
 ### Installation
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Environment Variables
@@ -111,7 +111,7 @@ NEXT_PUBLIC_CHAIN_NAME=Mantle Testnet
 ### Development
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -119,8 +119,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### Build
 
 ```bash
-npm run build
-npm start
+pnpm run build
+pnpm start
 ```
 
 ## Architecture

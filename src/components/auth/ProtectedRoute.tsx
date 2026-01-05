@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useWalletAuth } from '@/hooks/useWalletAuth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -10,13 +10,17 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { walletAddress, isUnlocked, loading } = useWalletAuth();
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push('/auth/login');
+    if (!loading) {
+      if (!walletAddress) {
+        router.push('/');
+      } else if (!isUnlocked) {
+        router.push('/wallet/unlock');
+      }
     }
-  }, [isAuthenticated, loading, router]);
+  }, [walletAddress, isUnlocked, loading, router]);
 
   if (loading) {
     return (
@@ -26,7 +30,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!walletAddress || !isUnlocked) {
     return null;
   }
 

@@ -2,11 +2,26 @@
  * Non-custodial key management service
  * All keys are generated and stored client-side only
  * Never sends private keys to server
+ * Supports both Web Crypto keys (P-256) and Ethereum keys (secp256k1)
  */
 
 import { SECURITY_CONFIG } from '@/config/constants';
 import { generateKeyPair, encryptPrivateKey, decryptPrivateKey, signData, exportPublicKey } from '@/utils/keyGeneration';
 import { storePrivateKey, getPrivateKey, getKeyByAccount, deleteKey, listKeys } from '@/utils/keyStorage';
+import { 
+  generateEthereumKeyPair, 
+  generateWalletFromMnemonic,
+  encryptEthereumPrivateKey, 
+  decryptEthereumPrivateKey,
+  getAddressFromPrivateKey 
+} from '@/utils/ethereumKeyGeneration';
+import { 
+  storeEthereumPrivateKey, 
+  getEthereumPrivateKey, 
+  getEthereumKeyByAccount, 
+  deleteEthereumKey, 
+  listEthereumKeys 
+} from '@/utils/ethereumKeyStorage';
 import type { APIResponse, SessionKey } from '@/types';
 
 class KeyService {
@@ -259,6 +274,256 @@ class KeyService {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to delete key',
+      };
+    }
+  }
+
+  /**
+   * Generate a new Ethereum key pair (self-custodial)
+   * Keys are stored encrypted in extension storage, isolated from web pages
+   */
+  async generateEthereumKey(password: string, accountAddress?: string): Promise<APIResponse<{ keyId: string; address: string; mnemonic: string }>> {
+    try {
+      // Verify we're in extension context
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be generated in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      const { privateKey, address, mnemonic } = generateEthereumKeyPair();
+      
+      // Encrypt private key and mnemonic with password
+      const encrypted = await encryptEthereumPrivateKey(privateKey, password, mnemonic);
+      
+      // Generate unique key ID
+      const keyId = `eth_key_${Date.now()}_${crypto.getRandomValues(new Uint8Array(4)).join('')}`;
+      
+      // Use address as accountAddress if not provided (for lookup)
+      const finalAccountAddress = accountAddress || address;
+      
+      // Store encrypted key in extension storage (isolated from web pages)
+      await storeEthereumPrivateKey(
+        keyId,
+        encrypted.encrypted,
+        encrypted.address,
+        encrypted.iv,
+        encrypted.salt,
+        finalAccountAddress,
+        encrypted.encryptedMnemonic,
+        encrypted.mnemonicIv
+      );
+      
+      return {
+        success: true,
+        data: {
+          keyId,
+          address: encrypted.address,
+          mnemonic, // Return mnemonic so user can save it
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Ethereum key generation failed',
+      };
+    }
+  }
+
+  /**
+   * Get Ethereum private key (decrypted) - requires password
+   * Only works in extension context - phishing sites cannot access keys
+   */
+  async getEthereumPrivateKey(keyId: string, password: string): Promise<APIResponse<string>> {
+    try {
+      // Verify we're in extension context
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be accessed in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      const stored = await getEthereumPrivateKey(keyId);
+      if (!stored) {
+        return {
+          success: false,
+          error: 'Ethereum key not found',
+        };
+      }
+      
+      const privateKey = await decryptEthereumPrivateKey(
+        stored.encryptedPrivateKey,
+        stored.iv,
+        stored.salt,
+        password
+      );
+      
+      return {
+        success: true,
+        data: privateKey,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to decrypt Ethereum key',
+      };
+    }
+  }
+
+  /**
+   * Get Ethereum key by account address
+   * Only works in extension context - phishing sites cannot access keys
+   */
+  async getEthereumKeyByAccount(accountAddress: string, password: string): Promise<APIResponse<string>> {
+    try {
+      // Verify we're in extension context
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be accessed in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      const stored = await getEthereumKeyByAccount(accountAddress);
+      if (!stored) {
+        return {
+          success: false,
+          error: 'Ethereum key not found for account',
+        };
+      }
+      
+      const privateKey = await decryptEthereumPrivateKey(
+        stored.encryptedPrivateKey,
+        stored.iv,
+        stored.salt,
+        password
+      );
+      
+      return {
+        success: true,
+        data: privateKey,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to decrypt Ethereum key',
+      };
+    }
+  }
+
+  /**
+   * List all stored Ethereum keys (public info only)
+   * Only works in extension context
+   */
+  async listEthereumKeys(): Promise<APIResponse<Array<{ id: string; address: string; accountAddress?: string }>>> {
+    try {
+      // Verify we're in extension context
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be accessed in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      const keys = await listEthereumKeys();
+      return {
+        success: true,
+        data: keys,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list Ethereum keys',
+      };
+    }
+  }
+
+  /**
+   * Delete Ethereum key
+   * Only works in extension context
+   */
+  async deleteEthereumKey(keyId: string): Promise<APIResponse<void>> {
+    try {
+      // Verify we're in extension context
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be accessed in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      await deleteEthereumKey(keyId);
+      return {
+        success: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete Ethereum key',
+      };
+    }
+  }
+
+  /**
+   * Generate Ethereum key from mnemonic phrase (for wallet restoration)
+   */
+  async generateEthereumKeyFromMnemonic(
+    mnemonic: string,
+    password: string,
+    accountAddress?: string
+  ): Promise<APIResponse<{ keyId: string; address: string }>> {
+    try {
+      // Verify we're in extension context (or dev mode)
+      const { isExtensionContext } = await import('@/utils/extensionCheck');
+      if (!isExtensionContext()) {
+        return {
+          success: false,
+          error: 'Keys can only be generated in extension context. This protects against phishing attacks.',
+        };
+      }
+
+      // Generate wallet from mnemonic
+      const { privateKey, address } = generateWalletFromMnemonic(mnemonic);
+      
+      // Encrypt private key and mnemonic with password
+      const encrypted = await encryptEthereumPrivateKey(privateKey, password, mnemonic);
+      
+      // Generate unique key ID
+      const keyId = `eth_key_${Date.now()}_${crypto.getRandomValues(new Uint8Array(4)).join('')}`;
+      
+      // Use address as accountAddress if not provided
+      const finalAccountAddress = accountAddress || address;
+      
+      // Store encrypted key in extension storage
+      await storeEthereumPrivateKey(
+        keyId,
+        encrypted.encrypted,
+        encrypted.address,
+        encrypted.iv,
+        encrypted.salt,
+        finalAccountAddress,
+        encrypted.encryptedMnemonic,
+        encrypted.mnemonicIv
+      );
+      
+      return {
+        success: true,
+        data: {
+          keyId,
+          address: encrypted.address,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to restore wallet from mnemonic',
       };
     }
   }

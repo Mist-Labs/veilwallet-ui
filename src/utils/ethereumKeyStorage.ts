@@ -1,19 +1,21 @@
 /**
- * Non-custodial key storage using Browser Extension Storage API
- * Keys are stored in extension storage, isolated from web pages
+ * Self-custodial Ethereum key storage using Browser Extension Storage API
+ * Ethereum private keys are stored encrypted in extension storage
  * Phishing sites cannot access these keys - only the extension can
  */
 
 import { isExtensionContext } from './extensionCheck';
 
-interface StoredKey {
+interface StoredEthereumKey {
   id: string;
   encryptedPrivateKey: string;
-  publicKey: string;
+  address: string;
   iv: string;
   salt: string;
   createdAt: string;
-  accountAddress?: string;
+  accountAddress?: string; // Smart contract wallet address if created
+  encryptedMnemonic?: string; // Encrypted mnemonic phrase
+  mnemonicIv?: string; // IV for mnemonic encryption
 }
 
 // Extension storage API (works with both Chrome and Firefox)
@@ -119,34 +121,38 @@ function createLocalStorageAPI(): StorageAPI {
   };
 }
 
-const STORAGE_PREFIX = 'veilwallet_key_';
-const KEYS_INDEX_KEY = 'veilwallet_keys_index';
+const STORAGE_PREFIX = 'veilwallet_eth_key_';
+const KEYS_INDEX_KEY = 'veilwallet_eth_keys_index';
 
 /**
- * Store encrypted private key in extension storage
+ * Store encrypted Ethereum private key in extension storage
  * Only accessible by the extension, not by web pages
  */
-export async function storePrivateKey(
+export async function storeEthereumPrivateKey(
   keyId: string,
   encryptedPrivateKey: string,
-  publicKey: string,
+  address: string,
   iv: string,
   salt: string,
-  accountAddress?: string
+  accountAddress?: string,
+  encryptedMnemonic?: string,
+  mnemonicIv?: string
 ): Promise<void> {
   const storage = getStorageAPI();
   if (!storage) {
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
   }
 
-  const keyData: StoredKey = {
+  const keyData: StoredEthereumKey = {
     id: keyId,
     encryptedPrivateKey,
-    publicKey,
+    address,
     iv,
     salt,
     createdAt: new Date().toISOString(),
-    accountAddress,
+    accountAddress: accountAddress || address, // Use address as accountAddress if not provided
+    encryptedMnemonic,
+    mnemonicIv,
   };
 
   const storageKey = `${STORAGE_PREFIX}${keyId}`;
@@ -166,15 +172,15 @@ export async function storePrivateKey(
 
   // If account address provided, create reverse lookup
   if (accountAddress) {
-    const accountKey = `veilwallet_account_${accountAddress}`;
+    const accountKey = `veilwallet_eth_account_${accountAddress}`;
     await storage.local.set({ [accountKey]: keyId });
   }
 }
 
 /**
- * Get encrypted private key from extension storage
+ * Get encrypted Ethereum private key from extension storage
  */
-export async function getPrivateKey(keyId: string): Promise<StoredKey | null> {
+export async function getEthereumPrivateKey(keyId: string): Promise<StoredEthereumKey | null> {
   const storage = getStorageAPI();
   if (!storage) {
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
@@ -186,15 +192,15 @@ export async function getPrivateKey(keyId: string): Promise<StoredKey | null> {
 }
 
 /**
- * Get key by account address
+ * Get Ethereum key by account address
  */
-export async function getKeyByAccount(accountAddress: string): Promise<StoredKey | null> {
+export async function getEthereumKeyByAccount(accountAddress: string): Promise<StoredEthereumKey | null> {
   const storage = getStorageAPI();
   if (!storage) {
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
   }
 
-  const accountKey = `veilwallet_account_${accountAddress}`;
+  const accountKey = `veilwallet_eth_account_${accountAddress}`;
   const accountResult = await storage.local.get(accountKey);
   const keyId = accountResult[accountKey];
 
@@ -202,13 +208,13 @@ export async function getKeyByAccount(accountAddress: string): Promise<StoredKey
     return null;
   }
 
-  return getPrivateKey(keyId);
+  return getEthereumPrivateKey(keyId);
 }
 
 /**
- * Delete key from extension storage
+ * Delete Ethereum key from extension storage
  */
-export async function deleteKey(keyId: string): Promise<void> {
+export async function deleteEthereumKey(keyId: string): Promise<void> {
   const storage = getStorageAPI();
   if (!storage) {
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
@@ -217,7 +223,7 @@ export async function deleteKey(keyId: string): Promise<void> {
   const storageKey = `${STORAGE_PREFIX}${keyId}`;
   
   // Get the key to find account address
-  const keyData = await getPrivateKey(keyId);
+  const keyData = await getEthereumPrivateKey(keyId);
   
   // Remove from storage
   await storage.local.remove(storageKey);
@@ -230,15 +236,15 @@ export async function deleteKey(keyId: string): Promise<void> {
 
   // Remove account mapping if exists
   if (keyData?.accountAddress) {
-    const accountKey = `veilwallet_account_${keyData.accountAddress}`;
+    const accountKey = `veilwallet_eth_account_${keyData.accountAddress}`;
     await storage.local.remove(accountKey);
   }
 }
 
 /**
- * List all stored keys (public info only)
+ * List all stored Ethereum keys (public info only)
  */
-export async function listKeys(): Promise<Array<{ id: string; publicKey: string; accountAddress?: string }>> {
+export async function listEthereumKeys(): Promise<Array<{ id: string; address: string; accountAddress?: string }>> {
   const storage = getStorageAPI();
   if (!storage) {
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
@@ -247,14 +253,14 @@ export async function listKeys(): Promise<Array<{ id: string; publicKey: string;
   const indexResult = await storage.local.get(KEYS_INDEX_KEY);
   const index: string[] = indexResult[KEYS_INDEX_KEY] || [];
 
-  const keys: Array<{ id: string; publicKey: string; accountAddress?: string }> = [];
+  const keys: Array<{ id: string; address: string; accountAddress?: string }> = [];
 
   for (const keyId of index) {
-    const keyData = await getPrivateKey(keyId);
+    const keyData = await getEthereumPrivateKey(keyId);
     if (keyData) {
       keys.push({
         id: keyData.id,
-        publicKey: keyData.publicKey,
+        address: keyData.address,
         accountAddress: keyData.accountAddress,
       });
     }
@@ -263,33 +269,3 @@ export async function listKeys(): Promise<Array<{ id: string; publicKey: string;
   return keys;
 }
 
-/**
- * Clear all keys (use with caution)
- */
-export async function clearAllKeys(): Promise<void> {
-  const storage = getStorageAPI();
-  if (!storage) {
-    throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
-  }
-
-  const indexResult = await storage.local.get(KEYS_INDEX_KEY);
-  const index: string[] = indexResult[KEYS_INDEX_KEY] || [];
-
-  const keysToRemove: string[] = [];
-  for (const keyId of index) {
-    keysToRemove.push(`${STORAGE_PREFIX}${keyId}`);
-  }
-
-  if (keysToRemove.length > 0) {
-    await storage.local.remove(keysToRemove);
-  }
-
-  await storage.local.remove(KEYS_INDEX_KEY);
-  
-  // Clear all account mappings (this is a bit brute force, but safe)
-  const allData = await storage.local.get(null);
-  const accountKeys = Object.keys(allData).filter(key => key.startsWith('veilwallet_account_'));
-  if (accountKeys.length > 0) {
-    await storage.local.remove(accountKeys);
-  }
-}
