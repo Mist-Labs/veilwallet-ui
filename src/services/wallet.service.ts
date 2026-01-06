@@ -15,7 +15,7 @@ class WalletService {
   constructor() {
     this.provider = new ethers.JsonRpcProvider(NETWORK_CONFIG.RPC_URL);
     this.tokenContract = new ethers.Contract(
-      CONTRACT_ADDRESSES.veilToken,
+      CONTRACT_ADDRESSES.VEIL_TOKEN,
       VEIL_TOKEN_ABI,
       this.provider
     );

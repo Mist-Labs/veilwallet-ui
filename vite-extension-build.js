@@ -76,6 +76,7 @@ contentScripts.forEach(script => {
   }
 });
 console.log('✅ Copied content scripts');
+
 if (fs.existsSync(publicDir)) {
   const iconFiles = ['icon-16.png', 'icon-48.png', 'icon-128.png'];
   iconFiles.forEach(icon => {
@@ -88,6 +89,21 @@ if (fs.existsSync(publicDir)) {
   console.log('✅ Copied icon assets');
 }
 
+// Fix absolute paths in HTML files
+console.log('🔧 Fixing paths in HTML files...');
+const htmlFiles = fs.readdirSync(EXT_DIR).filter(file => file.endsWith('.html'));
+htmlFiles.forEach(htmlFile => {
+  const filePath = path.join(EXT_DIR, htmlFile);
+  let content = fs.readFileSync(filePath, 'utf-8');
+  
+  // Replace absolute paths with relative paths
+  content = content.replace(/href="\/assets\//g, 'href="./assets/');
+  content = content.replace(/src="\/assets\//g, 'src="./assets/');
+  
+  fs.writeFileSync(filePath, content, 'utf-8');
+});
+console.log('✅ Fixed paths in HTML files');
+
 console.log('\n✨ Extension build complete!');
 console.log(`📦 Extension directory: ${EXT_DIR}\n`);
 console.log('To load the extension:');
@@ -95,4 +111,3 @@ console.log('1. Open chrome://extensions/');
 console.log('2. Enable "Developer mode"');
 console.log('3. Click "Load unpacked"');
 console.log(`4. Select: ${EXT_DIR}\n`);
-
