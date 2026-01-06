@@ -45,53 +45,69 @@ export default function PopupApp() {
   };
 
   const handlePasswordConfirm = async (password: string) => {
+    console.log('🔐 [PopupApp] Starting protection process...');
     try {
       const { keyService } = await import('@/services/key.service');
+      const smartAddress = localStorage.getItem('veilwallet_address');
       let eoaAddress = localStorage.getItem('veilwallet_eoa');
       
-      // If EOA not stored (old wallet), try to derive it from wallet address
-      if (!eoaAddress) {
-        const smartAddress = localStorage.getItem('veilwallet_address');
-        if (!smartAddress) {
-          setToast({ message: 'Wallet address not found', type: 'error' });
-          setShowPasswordModal(false);
-          return;
-        }
+      console.log('📍 [PopupApp] Smart Account Address:', smartAddress);
+      console.log('📍 [PopupApp] EOA Address from storage:', eoaAddress);
+      
+      if (!smartAddress) {
+        console.error('❌ [PopupApp] No smart account address found');
+        setToast({ message: 'Wallet address not found', type: 'error' });
+        setShowPasswordModal(false);
+        return;
+      }
 
-        // Try to get key by smart account address first
+      // If EOA not stored (old wallet), try to derive it from smart account address
+      if (!eoaAddress) {
+        console.log('🔍 [PopupApp] EOA not stored, trying to recover from smart account...');
         const keyResult = await keyService.getEthereumKeyByAccount(smartAddress, password);
         if (keyResult.success && keyResult.data) {
           eoaAddress = keyResult.data.address;
+          console.log('✅ [PopupApp] Recovered EOA address:', eoaAddress);
           localStorage.setItem('veilwallet_eoa', eoaAddress);
         } else {
+          console.error('❌ [PopupApp] Could not recover EOA:', keyResult.error);
           setToast({ message: 'Could not find wallet keys. Please restore your wallet.', type: 'error' });
           setShowPasswordModal(false);
           return;
         }
       }
 
-      const keyResult = await keyService.getEthereumKeyByAccount(eoaAddress, password);
+      // Now get the private key using the smart account address (not EOA)
+      console.log('🔑 [PopupApp] Retrieving private key for smart account:', smartAddress);
+      const keyResult = await keyService.getEthereumKeyByAccount(smartAddress, password);
+      
       if (!keyResult.success || !keyResult.data) {
+        console.error('❌ [PopupApp] Failed to get private key:', keyResult.error);
         setToast({ message: 'Invalid password', type: 'error' });
         setShowPasswordModal(false);
         return;
       }
 
+      console.log('✅ [PopupApp] Private key retrieved successfully');
+      console.log('🚀 [PopupApp] Deploying smart account...');
+
       const { accountProtectionService } = await import('@/services/accountProtection.service');
       const result = await accountProtectionService.protectAccount(keyResult.data.privateKey);
 
       if (result.success) {
+        console.log('✅ [PopupApp] Smart account deployed successfully!');
         setToast({ message: '✅ Privacy protection enabled!', type: 'success' });
         setShowProtectionBanner(false);
         setIsProtected(true);
         setShowPasswordModal(false);
         setTimeout(() => window.location.reload(), 1500);
       } else {
+        console.error('❌ [PopupApp] Deployment failed:', result.error);
         setToast({ message: result.error || 'Failed to enable protection', type: 'error' });
         setShowPasswordModal(false);
       }
     } catch (error: any) {
-      console.error('Protection error:', error);
+      console.error('❌ [PopupApp] Protection error:', error);
       setToast({ message: error.message || 'An error occurred', type: 'error' });
       setShowPasswordModal(false);
     }

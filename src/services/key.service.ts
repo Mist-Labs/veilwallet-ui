@@ -386,25 +386,30 @@ class KeyService {
    * Get Ethereum key by account address
    * Only works in extension context - phishing sites cannot access keys
    */
-  async getEthereumKeyByAccount(accountAddress: string, password: string): Promise<APIResponse<string>> {
+  async getEthereumKeyByAccount(accountAddress: string, password: string): Promise<APIResponse<{ address: string; privateKey: string }>> {
+    console.log('🔐 [KeyService] getEthereumKeyByAccount called with:', accountAddress);
     try {
       // Verify we're in extension context
       const { isExtensionContext } = await import('@/utils/extensionCheck');
       if (!isExtensionContext()) {
+        console.error('❌ [KeyService] Not in extension context');
         return {
           success: false,
           error: 'Keys can only be accessed in extension context. This protects against phishing attacks.',
         };
       }
 
+      console.log('🔍 [KeyService] Looking up stored key...');
       const stored = await getEthereumKeyByAccount(accountAddress);
       if (!stored) {
+        console.error('❌ [KeyService] No key found for account:', accountAddress);
         return {
           success: false,
           error: 'Ethereum key not found for account',
         };
       }
       
+      console.log('✅ [KeyService] Found stored key, decrypting...');
       const privateKey = await decryptEthereumPrivateKey(
         stored.encryptedPrivateKey,
         stored.iv,
@@ -412,11 +417,16 @@ class KeyService {
         password
       );
       
+      console.log('✅ [KeyService] Private key decrypted successfully');
       return {
         success: true,
-        data: privateKey,
+        data: {
+          address: stored.address,
+          privateKey,
+        },
       };
     } catch (error) {
+      console.error('❌ [KeyService] Error in getEthereumKeyByAccount:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to decrypt Ethereum key',

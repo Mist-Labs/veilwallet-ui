@@ -36,31 +36,39 @@ class AccountProtectionService {
   async protectAccount(
     privateKey: string
   ): Promise<{ success: boolean; smartAccountAddress?: string; error?: string }> {
+    console.log('🛡️ [AccountProtection] Starting protection process...');
     try {
       const wallet = new ethers.Wallet(privateKey);
       const eoaAddress = wallet.address;
+      console.log('📍 [AccountProtection] EOA Address:', eoaAddress);
 
       // Deploy smart account
+      console.log('🚀 [AccountProtection] Calling smartAccountService.deployAccount...');
       const result = await smartAccountService.deployAccount(privateKey, eoaAddress);
 
       if (!result.success) {
+        console.error('❌ [AccountProtection] Deployment failed:', result.error);
         return {
           success: false,
           error: result.error || 'Failed to deploy smart account',
         };
       }
 
+      console.log('✅ [AccountProtection] Smart account deployed at:', result.address);
+      
       // Store smart account address
       localStorage.setItem('veilwallet_address', result.address!);
       localStorage.setItem('veilwallet_eoa', eoaAddress);
       localStorage.setItem('veilwallet_protected', 'true');
+      
+      console.log('✅ [AccountProtection] Protection complete!');
 
       return {
         success: true,
         smartAccountAddress: result.address,
       };
     } catch (error: any) {
-      console.error('Error protecting account:', error);
+      console.error('❌ [AccountProtection] Error protecting account:', error);
       return {
         success: false,
         error: error.message || 'Failed to protect account',
