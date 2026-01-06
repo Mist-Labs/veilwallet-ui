@@ -2,11 +2,30 @@
 
 Privacy-first, non-custodial Account Abstraction wallet extension for Mantle blockchain.
 
+## ⚡ Quick Start
+
+**Built with Vite + React for optimal Chrome extension performance**
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build extension
+pnpm run build:extension
+
+# Load extension in Chrome
+# 1. Open chrome://extensions/
+# 2. Enable "Developer mode"
+# 3. Click "Load unpacked"
+# 4. Select the "extension/" folder
+```
+
 ## Quick Links
 
 - [Documentation](docs/README.md)
 - [API Reference](docs/api-reference/README.md)
 - [Getting Started](docs/getting-started.md)
+- [Vite Setup Guide](VITE_SETUP.md)
 
 ## Features
 
@@ -20,16 +39,14 @@ Privacy-first, non-custodial Account Abstraction wallet extension for Mantle blo
 
 ```
 src/
-├── app/                    # Next.js app router pages
-│   ├── auth/              # Authentication pages
-│   │   ├── login/        # Login page
-│   │   ├── signup/       # Signup page
-│   │   └── otp/          # OTP verification page
-│   ├── dashboard/        # Main dashboard
-│   └── wallet/           # Wallet features
-│       ├── send/         # Send tokens
-│       ├── receive/      # Receive tokens
-│       └── transactions/ # Transaction history
+├── popup/                 # Extension popup entry
+│   ├── main.tsx          # Popup main entry
+│   └── PopupApp.tsx      # Popup routing logic
+├── wallet/               # Wallet pages
+│   ├── CreateWallet.tsx  # Create wallet UI
+│   ├── UnlockWallet.tsx  # Unlock wallet UI
+│   ├── create-main.tsx   # Create wallet entry
+│   └── unlock-main.tsx   # Unlock wallet entry
 ├── components/           # React components
 │   ├── ui/              # Reusable UI components
 │   └── wallet/          # Wallet-specific components
@@ -111,24 +128,34 @@ NEXT_PUBLIC_CHAIN_NAME=Mantle Testnet
 ### Development
 
 ```bash
+# Start Vite dev server
 pnpm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-### Build
+### Build Extension
 
 ```bash
-pnpm run build
-pnpm start
+# Build and package for Chrome extension
+pnpm run build:extension
+```
+
+This will create an `extension/` directory ready to load in Chrome.
+
+### Preview Build
+
+```bash
+# Preview production build locally
+pnpm run preview
 ```
 
 ## Architecture
 
 ### Frontend (This Project) - Non-Custodial Browser Extension
-- **Framework**: Next.js 16 with App Router (built for extension popup)
+- **Build Tool**: Vite (fast, optimized for extensions)
+- **Framework**: React 18 with TypeScript
 - **Styling**: Tailwind CSS
-- **Language**: TypeScript
 - **State Management**: React Hooks
 - **Key Management**: Client-side only (Web Crypto API + Extension Storage API)
   - **Extension Storage**: Keys stored in `chrome.storage.local` / `browser.storage.local`

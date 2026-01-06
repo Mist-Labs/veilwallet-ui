@@ -5,9 +5,7 @@
  * Supports both Web Crypto keys (P-256) and Ethereum keys (secp256k1)
  */
 
-import { SECURITY_CONFIG } from '@/config/constants';
-import { generateKeyPair, encryptPrivateKey, decryptPrivateKey, signData, exportPublicKey } from '@/utils/keyGeneration';
-import { storePrivateKey, getPrivateKey, getKeyByAccount, deleteKey, listKeys } from '@/utils/keyStorage';
+import { NETWORK_CONFIG } from '@/config/constants';
 import { 
   generateEthereumKeyPair, 
   generateWalletFromMnemonic,

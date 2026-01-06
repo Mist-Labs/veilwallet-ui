@@ -6,7 +6,17 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs",
+    "unlimitedStorage"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
   ],
   "host_permissions": [
     "http://localhost:*/*",
@@ -36,7 +46,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["next/*", "*.js", "*.css", "*.png", "*.svg", "*.woff2"],
+      "resources": ["inpage.js", "*.png", "*.svg"],
       "matches": ["<all_urls>"]
     }
   ]
