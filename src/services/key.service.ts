@@ -202,9 +202,19 @@ class KeyService {
     privateKey: CryptoKey
   ): Promise<APIResponse<{ signature: string }>> {
     try {
-      const dataBuffer = typeof transactionData === 'string'
-        ? new TextEncoder().encode(transactionData)
-        : transactionData;
+      let dataBuffer: ArrayBuffer;
+      if (typeof transactionData === 'string') {
+        const encoded = new TextEncoder().encode(transactionData);
+        dataBuffer = encoded.buffer as ArrayBuffer;
+      } else if (transactionData instanceof ArrayBuffer) {
+        dataBuffer = transactionData;
+      } else {
+        // It's a Uint8Array or similar - create a new ArrayBuffer
+        const uint8Array = transactionData as Uint8Array;
+        const newBuffer = new ArrayBuffer(uint8Array.byteLength);
+        new Uint8Array(newBuffer).set(uint8Array);
+        dataBuffer = newBuffer;
+      }
       
       const signature = await signData(dataBuffer, privateKey);
       const signatureBase64 = arrayBufferToBase64(signature);
@@ -532,8 +542,8 @@ class KeyService {
 export const keyService = new KeyService();
 
 // Helper function
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);

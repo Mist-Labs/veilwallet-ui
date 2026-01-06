@@ -20,10 +20,14 @@ export async function deriveKeyFromPassword(
     ['deriveBits', 'deriveKey']
   );
 
+  // Ensure salt is a proper BufferSource - copy to new Uint8Array to guarantee ArrayBuffer
+  const saltArray = new Uint8Array(salt.length);
+  saltArray.set(salt);
+
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt,
+      salt: saltArray,
       iterations: iterations,
       hash: 'SHA-256',
     },
@@ -120,8 +124,8 @@ export async function generateNullifier(commitment: string, spendingKey: string)
 }
 
 // Helper functions
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);

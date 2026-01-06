@@ -108,7 +108,7 @@ export default function DashboardPage() {
                   >
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">
-                        {tx.type === 'send' ? 'Sent' : tx.type === 'receive' ? 'Received' : 'Transfer'}
+                        {tx.type === 'receive' ? 'Received' : tx.type === 'private' ? 'Private Transfer' : 'Transfer'}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {new Date(tx.timestamp).toLocaleString()}
@@ -116,7 +116,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-gray-900 dark:text-white">
-                        {tx.type === 'send' ? '-' : '+'} {tx.amount} MNT
+                        {tx.type === 'receive' ? '+' : '-'} {tx.amount} MNT
                       </p>
                       <p className={`text-sm ${
                         tx.status === 'confirmed' ? 'text-green-600' :

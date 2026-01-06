@@ -1,32 +1,47 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 
 export default function Home() {
   const router = useRouter();
+  const pathname = usePathname();
   const [hasWallet, setHasWallet] = useState<boolean | null>(null);
+  const [isExtension, setIsExtension] = useState(false);
 
   useEffect(() => {
-    // Check if user has a wallet
+    // Check if running in extension context
     if (typeof window !== 'undefined') {
+      const isExt = window.location.protocol === 'chrome-extension:' || 
+                    window.location.protocol === 'moz-extension:' ||
+                    (typeof chrome !== 'undefined' && (chrome as any).runtime?.id) ||
+                    (typeof browser !== 'undefined' && (browser as any).runtime?.id);
+      setIsExtension(isExt);
+      
+      // If in extension and on root, redirect to popup
+      if (isExt && pathname === '/') {
+        router.push('/popup');
+        return;
+      }
+      
+      // Check if user has a wallet
       const address = localStorage.getItem('veilwallet_address');
       setHasWallet(!!address);
     }
-  }, []);
+  }, [pathname, router]);
 
   if (hasWallet === null) {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black dark:border-white"></div>
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black dark:border-white"></div>
       </div>
     );
   }
 
-  if (hasWallet) {
+  if (hasWallet && !isExtension) {
     router.push('/wallet/unlock');
     return null;
   }

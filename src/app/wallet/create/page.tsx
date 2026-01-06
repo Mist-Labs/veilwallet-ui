@@ -27,6 +27,7 @@ export default function CreateWalletPage() {
   const [step, setStep] = useState<'password' | 'creating' | 'success' | 'mnemonic'>('password');
   const [walletAddress, setWalletAddress] = useState('');
   const [mnemonic, setMnemonic] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,12 +120,32 @@ export default function CreateWalletPage() {
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
-                onClick={() => {
-                  navigator.clipboard.writeText(mnemonic);
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(mnemonic);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  } catch (err) {
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = mnemonic;
+                    textArea.style.position = 'fixed';
+                    textArea.style.opacity = '0';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                      document.execCommand('copy');
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch (fallbackErr) {
+                      console.error('Failed to copy:', fallbackErr);
+                    }
+                    document.body.removeChild(textArea);
+                  }
                 }}
                 className="flex-1"
               >
-                Copy Seed Phrase
+                {copied ? '✓ Copied!' : 'Copy Seed Phrase'}
               </Button>
               <Button 
                 onClick={() => setStep('success')} 

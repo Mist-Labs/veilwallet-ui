@@ -91,7 +91,7 @@ export async function encryptPrivateKey(
   return {
     encrypted,
     iv,
-    salt: arrayBufferToBase64(salt.buffer),
+    salt: arrayBufferToBase64(new Uint8Array(salt)),
     publicKey: JSON.stringify(publicKeyJwk),
   };
 }
@@ -168,8 +168,8 @@ export async function verifySignature(
 }
 
 // Helper functions
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);

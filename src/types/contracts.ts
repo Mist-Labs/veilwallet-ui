@@ -1,45 +1,46 @@
 // Smart contract types
-import type { ethers } from 'ethers';
+// Note: These are type definitions for contract interfaces, not extending ethers.Contract
+// to avoid TypeScript conflicts with ethers.js internal types
 
-export interface VeilTokenContract extends ethers.Contract {
-  transfer: (to: string, amount: bigint) => Promise<ethers.ContractTransactionResponse>;
-  transferFrom: (from: string, to: string, amount: bigint) => Promise<ethers.ContractTransactionResponse>;
-  approve: (spender: string, amount: bigint) => Promise<ethers.ContractTransactionResponse>;
+export interface VeilTokenContract {
+  transfer: (to: string, amount: bigint) => Promise<any>;
+  transferFrom: (from: string, to: string, amount: bigint) => Promise<any>;
+  approve: (spender: string, amount: bigint) => Promise<any>;
   balanceOf: (address: string) => Promise<bigint>;
   totalSupply: () => Promise<bigint>;
   allowance: (owner: string, spender: string) => Promise<bigint>;
-  privateTransfer: (commitment: string, nullifier: string, amount: bigint, proof: string) => Promise<ethers.ContractTransactionResponse>;
-  claimFromCommitment: (commitment: string, amount: bigint, proof: string) => Promise<ethers.ContractTransactionResponse>;
+  privateTransfer: (commitment: string, nullifier: string, amount: bigint, proof: string) => Promise<any>;
+  claimFromCommitment: (commitment: string, amount: bigint, proof: string) => Promise<any>;
   createCommitment: (inputs: [string, string, string, string]) => Promise<string>;
   isNullifierUsed: (nullifier: string) => Promise<boolean>;
   isCommitmentValid: (commitment: string) => Promise<boolean>;
-  mint: (to: string, amount: bigint) => Promise<ethers.ContractTransactionResponse>;
+  mint: (to: string, amount: bigint) => Promise<any>;
 }
 
-export interface SmartAccountContract extends ethers.Contract {
+export interface SmartAccountContract {
   owner: () => Promise<string>;
   signer: () => Promise<string>;
   entryPoint: () => Promise<string>;
-  changeOwner: (newOwner: string) => Promise<ethers.ContractTransactionResponse>;
-  execute: (target: string, value: bigint, data: string) => Promise<ethers.ContractTransactionResponse>;
-  executeBatch: (targets: string[], values: bigint[], datas: string[]) => Promise<ethers.ContractTransactionResponse>;
-  addSessionKey: (sessionKey: string, validUntil: number, spendingLimit: bigint) => Promise<ethers.ContractTransactionResponse>;
-  revokeSessionKey: (sessionKey: string) => Promise<ethers.ContractTransactionResponse>;
+  changeOwner: (newOwner: string) => Promise<any>;
+  execute: (target: string, value: bigint, data: string) => Promise<any>;
+  executeBatch: (targets: string[], values: bigint[], datas: string[]) => Promise<any>;
+  addSessionKey: (sessionKey: string, validUntil: number, spendingLimit: bigint) => Promise<any>;
+  revokeSessionKey: (sessionKey: string) => Promise<any>;
   sessionKeys: (sessionKey: string) => Promise<[bigint, bigint, bigint]>;
-  setGuardian: (guardian: string) => Promise<ethers.ContractTransactionResponse>;
-  initiateRecovery: (newOwner: string) => Promise<ethers.ContractTransactionResponse>;
-  executeRecovery: () => Promise<ethers.ContractTransactionResponse>;
+  setGuardian: (guardian: string) => Promise<any>;
+  initiateRecovery: (newOwner: string) => Promise<any>;
+  executeRecovery: () => Promise<any>;
   guardian: () => Promise<string>;
   pendingRecovery: () => Promise<[string, bigint, boolean]>;
 }
 
-export interface AccountFactoryContract extends ethers.Contract {
+export interface AccountFactoryContract {
   getAddress: (owner: string, salt: bigint) => Promise<string>;
-  createAccount: (owner: string, salt: bigint) => Promise<ethers.ContractTransactionResponse>;
+  createAccount: (owner: string, salt: bigint) => Promise<any>;
   entryPoint: () => Promise<string>;
 }
 
-export interface VerifierContract extends ethers.Contract {
+export interface VerifierContract {
   verifyCommitment: (inputs: [string, string, string, string]) => Promise<string>;
   verifyCommitment2: (inputs: [string, string]) => Promise<string>;
   verifyCommitment3: (inputs: [string, string, string]) => Promise<string>;

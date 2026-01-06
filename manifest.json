@@ -5,26 +5,40 @@
   "description": "Privacy-first Account Abstraction wallet for Mantle blockchain",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "http://localhost:*/*",
-    "https://*/*"
+    "https://*/*",
+    "https://rpc.sepolia.mantle.xyz/*",
+    "https://explorer.sepolia.mantle.xyz/*"
   ],
   "action": {
-    "default_popup": "index.html",
-    "default_title": "VeilWallet"
+    "default_popup": "popup.html",
+    "default_title": "VeilWallet",
+    "default_icon": {
+      "16": "icon-16.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "icons": {
     "16": "icon-16.png",
     "48": "icon-48.png",
     "128": "icon-128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.js", "*.css", "*.png", "*.svg"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
 
