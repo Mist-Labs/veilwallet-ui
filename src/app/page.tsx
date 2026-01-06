@@ -22,7 +22,7 @@ export default function Home() {
       setIsExtension(isExt);
       
       // If in extension and on root, redirect to popup
-      if (isExt && pathname === '/') {
+      if (isExt && (pathname === '/' || pathname === '/popup.html')) {
         router.push('/popup');
         return;
       }

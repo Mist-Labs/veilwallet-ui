@@ -25,7 +25,26 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="viewport" content="width=400, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <style dangerouslySetInnerHTML={{__html: `
+          html, body {
+            width: 400px !important;
+            height: 600px !important;
+            min-width: 400px !important;
+            min-height: 600px !important;
+            max-width: 400px !important;
+            max-height: 600px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+          }
+          #__next {
+            width: 400px !important;
+            height: 600px !important;
+            min-width: 400px !important;
+            min-height: 600px !important;
+          }
+        `}} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

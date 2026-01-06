@@ -53,14 +53,20 @@ export default function PopupPage() {
 
   if (authLoading) {
     return (
-      <div className="w-[400px] h-[600px] flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="w-[400px] h-[600px] flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900" style={{ width: '400px', height: '600px' }}>
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-white/20 border-t-white"></div>
       </div>
     );
   }
 
   if (!walletAddress || !isUnlocked) {
-    return null;
+    return (
+      <div className="w-[400px] h-[600px] flex items-center justify-center bg-white dark:bg-gray-900" style={{ width: '400px', height: '600px' }}>
+        <div className="text-center p-4">
+          <p className="text-gray-600 dark:text-gray-400">Redirecting...</p>
+        </div>
+      </div>
+    );
   }
 
   const totalBalance = balance 
@@ -68,7 +74,18 @@ export default function PopupPage() {
     : '0.0000';
 
   return (
-    <div className="w-[400px] h-[600px] bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-slate-900 dark:via-purple-900 dark:to-slate-900 overflow-hidden flex flex-col">
+    <div 
+      className="w-[400px] min-w-[400px] h-[600px] min-h-[600px] max-h-[600px] bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-slate-900 dark:via-purple-900 dark:to-slate-900 overflow-hidden flex flex-col" 
+      style={{ 
+        width: '400px', 
+        height: '600px', 
+        minWidth: '400px', 
+        minHeight: '600px',
+        maxWidth: '400px',
+        maxHeight: '600px',
+        position: 'relative'
+      }}
+    >
       {/* Premium Header with Glassmorphism */}
       <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-6 pb-8">
         <div className="absolute inset-0 bg-black/10"></div>
