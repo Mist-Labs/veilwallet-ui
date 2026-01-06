@@ -72,6 +72,10 @@ if (fs.existsSync(OUT_DIR)) {
   const nextSrc = path.join(EXT_DIR, '_next');
   const nextDest = path.join(EXT_DIR, 'next');
   if (fs.existsSync(nextSrc)) {
+                                                                                                                                    // Remove existing 'next' directory if it exists
+    if (fs.existsSync(nextDest)) {
+      fs.rmSync(nextDest, { recursive: true, force: true });
+    }
     fs.renameSync(nextSrc, nextDest);
     console.log('✅ Renamed _next to next');
   }
@@ -135,6 +139,45 @@ if (fs.existsSync(OUT_DIR)) {
   if (fs.existsSync(popupPath)) {
     let popupHtml = fs.readFileSync(popupPath, 'utf8');
     
+    // Extract inline scripts (required for Manifest V3 CSP)
+    let scriptCounter = 0;
+    popupHtml = popupHtml.replace(/<script([^>]*)>([\s\S]*?)<\/script>/g, (match, attrs, content) => {
+      // Skip external scripts
+      if (attrs.includes('src=')) {
+        return match;
+      }
+      
+      // Skip empty scripts
+      const trimmedContent = content.trim();
+      if (!trimmedContent || trimmedContent.length === 0) {
+        return match;
+      }
+      
+      // Extract to external file
+      scriptCounter++;
+      const scriptFileName = `inline-script-${scriptCounter}.js`;
+      const scriptPath = path.join(EXT_DIR, scriptFileName);
+      
+      // Fix paths in script content before writing
+      let fixedContent = trimmedContent;
+      fixedContent = fixedContent.replace(/\/_next\//g, './next/');
+      fixedContent = fixedContent.replace(/"\/_next\//g, '"./next/');
+      fixedContent = fixedContent.replace(/'\/_next\//g, "'./next/");
+      fixedContent = fixedContent.replace(/`\/_next\//g, '`./next/');
+      fixedContent = fixedContent.replace(/\("\/next\//g, '("./next/');
+      fixedContent = fixedContent.replace(/\('\/next\//g, "('./next/");
+      fixedContent = fixedContent.replace(/\["\/_next\//g, '["./next/');
+      fixedContent = fixedContent.replace(/\['\/_next\//g, "['./next/");
+      
+      // Write script content to file
+      fs.writeFileSync(scriptPath, fixedContent);
+      
+      // Return script tag with src pointing to external file
+      return `<script${attrs} src="./${scriptFileName}"></script>`;
+    });
+    
+    console.log(`✅ Extracted ${scriptCounter} inline scripts to external files`);
+    
     // Fix paths to be relative and rename _next to next (required for extensions)
     popupHtml = popupHtml.replace(/href="\/_next\//g, 'href="./next/');
     popupHtml = popupHtml.replace(/src="\/_next\//g, 'src="./next/');
@@ -144,12 +187,6 @@ if (fs.existsSync(OUT_DIR)) {
     // Fix paths in JSON/JS content
     popupHtml = popupHtml.replace(/("\/_next\/)/g, '("./next/');
     popupHtml = popupHtml.replace(/('\/_next\/)/g, "('./next/");
-    
-    // Fix CSS selectors and IDs (but NOT #__next which is a DOM element ID)
-    // Only replace _next when it's part of a path, not when it's __next (double underscore)
-    popupHtml = popupHtml.replace(/#_next\s/g, '#next ');
-    popupHtml = popupHtml.replace(/#_next,/g, '#next,');
-    popupHtml = popupHtml.replace(/#_next\{/g, '#next{');
     
     // Fix the viewport
     popupHtml = popupHtml.replace(
