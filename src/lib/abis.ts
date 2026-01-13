@@ -74,3 +74,47 @@ export const VERIFIER_ABI = [
   'function hasher() public view returns (address)',
 ] as const;
 
+// ERC721 ABI (NFTs)
+export const ERC721_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function safeTransferFrom(address from, address to, uint256 tokenId)',
+  'function transferFrom(address from, address to, uint256 tokenId)',
+  'function approve(address to, uint256 tokenId)',
+  'function getApproved(uint256 tokenId) view returns (address)',
+  'function setApprovalForAll(address operator, bool approved)',
+  'function isApprovedForAll(address owner, address operator) view returns (bool)',
+  'function tokenURI(uint256 tokenId) view returns (string)',
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function totalSupply() view returns (uint256)',
+  'function tokenByIndex(uint256 index) view returns (uint256)',
+  'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
+] as const;
+
+// ERC1155 ABI (Multi-token standard)
+export const ERC1155_ABI = [
+  'function balanceOf(address account, uint256 id) view returns (uint256)',
+  'function balanceOfBatch(address[] calldata accounts, uint256[] calldata ids) view returns (uint256[])',
+  'function setApprovalForAll(address operator, bool approved)',
+  'function isApprovedForAll(address account, address operator) view returns (bool)',
+  'function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes calldata data)',
+  'function safeBatchTransferFrom(address from, address to, uint256[] calldata ids, uint256[] calldata amounts, bytes calldata data)',
+  'function uri(uint256 id) view returns (string)',
+] as const;
+
+// Standard ERC20 ABI
+export const ERC20_ABI = [
+  'function transfer(address to, uint256 amount) public returns (bool)',
+  'function transferFrom(address from, address to, uint256 amount) public returns (bool)',
+  'function approve(address spender, uint256 amount) public returns (bool)',
+  'function balanceOf(address account) public view returns (uint256)',
+  'function totalSupply() public view returns (uint256)',
+  'function allowance(address owner, address spender) public view returns (uint256)',
+  'function decimals() public view returns (uint8)',
+  'function name() public view returns (string)',
+  'function symbol() public view returns (string)',
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+  'event Approval(address indexed owner, address indexed spender, uint256 value)',
+] as const;
+

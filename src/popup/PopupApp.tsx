@@ -6,8 +6,13 @@ import { Toast } from '@/components/ui/Toast';
 export default function PopupApp() {
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string>('');
+  const [eoaAddress, setEoaAddress] = useState<string>('');
+  const [smartAccountAddress, setSmartAccountAddress] = useState<string>('');
+  const [selectedAccount, setSelectedAccount] = useState<'eoa' | 'smart'>('smart'); // Default to smart account
   const [mntBalance, setMntBalance] = useState<string>('0.00');
   const [veilBalance, setVeilBalance] = useState<string>('0.00');
+  const [eoaMntBalance, setEoaMntBalance] = useState<string>('0.00');
+  const [eoaVeilBalance, setEoaVeilBalance] = useState<string>('0.00');
   const [showProtectionBanner, setShowProtectionBanner] = useState(false);
   const [isProtected, setIsProtected] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -16,9 +21,11 @@ export default function PopupApp() {
   useEffect(() => {
     // Check if user has a wallet
     const address = localStorage.getItem('veilwallet_address');
+    const eoa = localStorage.getItem('veilwallet_eoa');
     const unlocked = sessionStorage.getItem('veilwallet_unlocked') === 'true';
+    const savedAccount = localStorage.getItem('veilwallet_selected_account') as 'eoa' | 'smart' | null;
     
-    if (!address) {
+    if (!address && !eoa) {
       // No wallet, redirect to create
       window.location.href = 'wallet-create.html';
     } else if (!unlocked) {
@@ -26,12 +33,48 @@ export default function PopupApp() {
       window.location.href = 'wallet-unlock.html';
     } else {
       // Wallet is unlocked, show dashboard
-      setWalletAddress(address);
+      setEoaAddress(eoa || '');
+      setSmartAccountAddress(address || '');
+      
+      // Determine which account to show
+      let initialAccount: 'eoa' | 'smart' = 'smart';
+      if (savedAccount) {
+        initialAccount = savedAccount;
+      } else if (address && eoa) {
+        // Both exist, default to smart account
+        initialAccount = 'smart';
+      } else if (eoa) {
+        // Only EOA exists
+        initialAccount = 'eoa';
+      }
+      
+      setSelectedAccount(initialAccount);
+      const displayAddress = initialAccount === 'smart' && address ? address : (eoa || address || '');
+      setWalletAddress(displayAddress);
       checkProtectionStatus();
-      loadBalances(address);
+      loadAllBalances();
       setLoading(false);
     }
   }, []);
+  
+  useEffect(() => {
+    // Update displayed address when selected account changes
+    if (loading) return;
+    
+    let displayAddress = '';
+    if (selectedAccount === 'smart' && smartAccountAddress) {
+      displayAddress = smartAccountAddress;
+      localStorage.setItem('veilwallet_selected_account', 'smart');
+    } else if (selectedAccount === 'eoa' && eoaAddress) {
+      displayAddress = eoaAddress;
+      localStorage.setItem('veilwallet_selected_account', 'eoa');
+    }
+    
+    if (displayAddress) {
+      setWalletAddress(displayAddress);
+      loadBalances(displayAddress);
+    }
+  }, [selectedAccount, smartAccountAddress, eoaAddress, loading]);
 
   const checkProtectionStatus = async () => {
     const { accountProtectionService } = await import('@/services/accountProtection.service');
@@ -48,38 +91,47 @@ export default function PopupApp() {
     console.log('🔐 [PopupApp] Starting protection process...');
     try {
       const { keyService } = await import('@/services/key.service');
-      const smartAddress = localStorage.getItem('veilwallet_address');
+      const storedAddress = localStorage.getItem('veilwallet_address');
       let eoaAddress = localStorage.getItem('veilwallet_eoa');
       
-      console.log('📍 [PopupApp] Smart Account Address:', smartAddress);
+      console.log('📍 [PopupApp] Stored Address:', storedAddress);
       console.log('📍 [PopupApp] EOA Address from storage:', eoaAddress);
       
-      if (!smartAddress) {
-        console.error('❌ [PopupApp] No smart account address found');
+      if (!storedAddress) {
+        console.error('❌ [PopupApp] No wallet address found');
         setToast({ message: 'Wallet address not found', type: 'error' });
         setShowPasswordModal(false);
         return;
       }
 
-      // If EOA not stored (old wallet), try to derive it from smart account address
+      // CRITICAL: Keys are always stored with EOA address, not smart account address
+      // If EOA is not stored, the stored address might be the EOA itself (old wallets)
+      // OR we need to look it up from the key storage
       if (!eoaAddress) {
-        console.log('🔍 [PopupApp] EOA not stored, trying to recover from smart account...');
-        const keyResult = await keyService.getEthereumKeyByAccount(smartAddress, password);
+        console.log('🔍 [PopupApp] EOA not stored, checking if stored address is EOA...');
+        
+        // Try to get key using stored address (might be EOA for old wallets)
+        let keyResult = await keyService.getEthereumKeyByAccount(storedAddress, password);
+        
         if (keyResult.success && keyResult.data) {
+          // Found the key! The stored address is likely the EOA
           eoaAddress = keyResult.data.address;
-          console.log('✅ [PopupApp] Recovered EOA address:', eoaAddress);
+          console.log('✅ [PopupApp] Stored address is EOA:', eoaAddress);
           localStorage.setItem('veilwallet_eoa', eoaAddress);
+          
+          // If stored address was EOA, we'll update it to smart account after deployment
+          // For now, use the EOA to get the private key
         } else {
-          console.error('❌ [PopupApp] Could not recover EOA:', keyResult.error);
+          console.error('❌ [PopupApp] Could not find key with stored address:', keyResult.error);
           setToast({ message: 'Could not find wallet keys. Please restore your wallet.', type: 'error' });
           setShowPasswordModal(false);
           return;
         }
       }
 
-      // Now get the private key using the smart account address (not EOA)
-      console.log('🔑 [PopupApp] Retrieving private key for smart account:', smartAddress);
-      const keyResult = await keyService.getEthereumKeyByAccount(smartAddress, password);
+      // Always use EOA address to get the private key (keys are stored with EOA)
+      console.log('🔑 [PopupApp] Retrieving private key using EOA address:', eoaAddress);
+      const keyResult = await keyService.getEthereumKeyByAccount(eoaAddress!, password);
       
       if (!keyResult.success || !keyResult.data) {
         console.error('❌ [PopupApp] Failed to get private key:', keyResult.error);
@@ -119,6 +171,37 @@ export default function PopupApp() {
     setShowProtectionBanner(false);
   };
 
+  const loadAllBalances = async () => {
+    try {
+      const { smartAccountService } = await import('@/services/smartAccount.service');
+      const { walletService } = await import('@/services/wallet.service');
+      
+      // Load smart account balances
+      if (smartAccountAddress) {
+        const mnt = await smartAccountService.getMNTBalance(smartAccountAddress);
+        setMntBalance(parseFloat(mnt).toFixed(4));
+        
+        const veilResult = await walletService.getVeilTokenBalance(smartAccountAddress);
+        if (veilResult.success && veilResult.data) {
+          setVeilBalance(veilResult.data.balance);
+        }
+      }
+      
+      // Load EOA balances
+      if (eoaAddress) {
+        const mnt = await smartAccountService.getMNTBalance(eoaAddress);
+        setEoaMntBalance(parseFloat(mnt).toFixed(4));
+        
+        const veilResult = await walletService.getVeilTokenBalance(eoaAddress);
+        if (veilResult.success && veilResult.data) {
+          setEoaVeilBalance(veilResult.data.balance);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading balances:', error);
+    }
+  };
+
   const loadBalances = async (address: string) => {
     try {
       const { smartAccountService } = await import('@/services/smartAccount.service');
@@ -126,12 +209,19 @@ export default function PopupApp() {
       
       // Get MNT balance
       const mnt = await smartAccountService.getMNTBalance(address);
-      setMntBalance(parseFloat(mnt).toFixed(4));
+      const balance = parseFloat(mnt).toFixed(4);
       
       // Get VEIL token balance
       const veilResult = await walletService.getVeilTokenBalance(address);
-      if (veilResult.success && veilResult.data) {
-        setVeilBalance(veilResult.data.balance);
+      const veilBal = veilResult.success && veilResult.data ? veilResult.data.balance : '0.00';
+      
+      // Update balances based on which account is selected
+      if (selectedAccount === 'smart') {
+        setMntBalance(balance);
+        setVeilBalance(veilBal);
+      } else {
+        setEoaMntBalance(balance);
+        setEoaVeilBalance(veilBal);
       }
     } catch (error) {
       console.error('Error loading balances:', error);
@@ -161,7 +251,42 @@ export default function PopupApp() {
             </div>
           )}
         </div>
-        <p className="text-xs text-white/60 truncate">{walletAddress}</p>
+        
+        {/* Account Selector */}
+        {eoaAddress && smartAccountAddress && (
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => setSelectedAccount('eoa')}
+              className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                selectedAccount === 'eoa'
+                  ? 'bg-purple-500/30 text-white border border-purple-400/50'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              Account 1 (EOA)
+            </button>
+            <button
+              onClick={() => setSelectedAccount('smart')}
+              className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                selectedAccount === 'smart'
+                  ? 'bg-purple-500/30 text-white border border-purple-400/50'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              Account 2 (Smart)
+            </button>
+          </div>
+        )}
+        
+        <p className="text-xs text-white/60 truncate">
+          {selectedAccount === 'smart' ? smartAccountAddress : eoaAddress}
+        </p>
+        {selectedAccount === 'smart' && (
+          <p className="text-xs text-white/40 mt-1">🛡️ Privacy Protected</p>
+        )}
+        {selectedAccount === 'eoa' && (
+          <p className="text-xs text-white/40 mt-1">🔓 Standard Account</p>
+        )}
       </div>
 
       {/* Protection Banner */}
@@ -183,13 +308,17 @@ export default function PopupApp() {
             </button>
           </div>
           <div className="mb-4">
-            <h2 className="text-5xl font-bold mb-2">{mntBalance}</h2>
+            <h2 className="text-5xl font-bold mb-2">
+              {selectedAccount === 'smart' ? mntBalance : eoaMntBalance}
+            </h2>
             <p className="text-lg text-white/80">MNT</p>
           </div>
           <div className="flex items-center space-x-4 text-sm">
             <div>
               <span className="text-white/60">VEIL:</span>
-              <span className="ml-2 font-semibold">{veilBalance}</span>
+              <span className="ml-2 font-semibold">
+                {selectedAccount === 'smart' ? veilBalance : eoaVeilBalance}
+              </span>
             </div>
           </div>
         </div>

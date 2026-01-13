@@ -1,14 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordModal } from '@/components/ui/PasswordModal';
 import { Toast } from '@/components/ui/Toast';
+import { TokenSelector } from '@/components/ui/TokenSelector';
+import { tokenService, type TokenInfo } from '@/services/token.service';
+import { nftService } from '@/services/nft.service';
+import { NETWORK_CONFIG, CONTRACT_ADDRESSES } from '@/config/constants';
 
 type TransferType = 'standard' | 'private';
+type TokenType = 'native' | 'erc20' | 'erc721' | 'erc1155';
 
 export default function SendPage() {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
+  const [tokenId, setTokenId] = useState(''); // For ERC721/ERC1155
+  const [selectedToken, setSelectedToken] = useState<string | null>(null); // null = native token
+  const [tokenType, setTokenType] = useState<TokenType>('native');
+  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [transferType, setTransferType] = useState<TransferType>('standard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -16,6 +25,20 @@ export default function SendPage() {
   const [txHash, setTxHash] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [accountAddress, setAccountAddress] = useState<string>('');
+
+  useEffect(() => {
+    // Get current account address
+    const selectedAccount = localStorage.getItem('veilwallet_selected_account') || 'smart';
+    const smartAccount = localStorage.getItem('veilwallet_address');
+    const eoaAddress = localStorage.getItem('veilwallet_eoa');
+    
+    const address = selectedAccount === 'smart' && smartAccount 
+      ? smartAccount 
+      : (eoaAddress || smartAccount || '');
+    
+    setAccountAddress(address);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,20 +52,26 @@ export default function SendPage() {
     setSuccess(false);
 
     try {
-      // Get wallet info
-      const address = localStorage.getItem('veilwallet_address');
-      if (!address) {
+      // Get selected account and addresses
+      const selectedAccount = localStorage.getItem('veilwallet_selected_account') || 'smart';
+      const smartAccount = localStorage.getItem('veilwallet_address');
+      const eoaAddress = localStorage.getItem('veilwallet_eoa');
+      
+      // Determine which address to use for the transaction
+      const fromAddress = selectedAccount === 'smart' && smartAccount 
+        ? smartAccount 
+        : (eoaAddress || smartAccount);
+      
+      if (!fromAddress) {
         throw new Error('Wallet not found');
       }
 
-      // Get private key from encrypted storage
-      const { keyService } = await import('@/services/key.service');
-      const eoaAddress = localStorage.getItem('veilwallet_eoa');
-      
+      // Always use EOA to get private key (keys are stored with EOA)
       if (!eoaAddress) {
         throw new Error('EOA address not found');
       }
 
+      const { keyService } = await import('@/services/key.service');
       const keyResult = await keyService.getEthereumKeyByAccount(eoaAddress, password);
       if (!keyResult.success || !keyResult.data) {
         setToast({ message: 'Invalid password', type: 'error' });
@@ -54,8 +83,104 @@ export default function SendPage() {
       const { privateKey } = keyResult.data;
       setShowPasswordModal(false);
 
-      if (transferType === 'private') {
-        // Send private transfer
+      // Handle different token types
+      if (tokenType === 'erc721') {
+        // ERC721 NFT transfer
+        if (!selectedToken || !tokenId) {
+          throw new Error('NFT contract address and token ID required');
+        }
+
+        const isEOA = selectedAccount === 'eoa' || 
+          (fromAddress.toLowerCase() === eoaAddress?.toLowerCase());
+
+        if (isEOA) {
+          const result = await nftService.transferERC721(
+            selectedToken,
+            privateKey,
+            recipient,
+            tokenId
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to transfer NFT');
+          }
+
+          setTxHash(result.txHash || '');
+          setSuccess(true);
+          setToast({ message: 'NFT transferred successfully!', type: 'success' });
+        } else {
+          // Through smart account
+          if (!smartAccount || fromAddress.toLowerCase() !== smartAccount.toLowerCase()) {
+            throw new Error('Smart account address mismatch');
+          }
+
+          const data = nftService.encodeERC721TransferData(recipient, tokenId);
+          const result = await smartAccountService.executeTransaction(
+            smartAccount,
+            privateKey,
+            selectedToken,
+            BigInt(0),
+            data
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to transfer NFT');
+          }
+
+          setTxHash(result.txHash || '');
+          setSuccess(true);
+          setToast({ message: 'NFT transferred successfully!', type: 'success' });
+        }
+      } else if (tokenType === 'erc1155') {
+        // ERC1155 multi-token transfer
+        if (!selectedToken || !tokenId || !amount) {
+          throw new Error('Contract address, token ID, and amount required');
+        }
+
+        const isEOA = selectedAccount === 'eoa' || 
+          (fromAddress.toLowerCase() === eoaAddress?.toLowerCase());
+
+        if (isEOA) {
+          const result = await nftService.transferERC1155(
+            selectedToken,
+            privateKey,
+            recipient,
+            tokenId,
+            amount
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to transfer tokens');
+          }
+
+          setTxHash(result.txHash || '');
+          setSuccess(true);
+          setToast({ message: 'Tokens transferred successfully!', type: 'success' });
+        } else {
+          // Through smart account
+          if (!smartAccount || fromAddress.toLowerCase() !== smartAccount.toLowerCase()) {
+            throw new Error('Smart account address mismatch');
+          }
+
+          const data = nftService.encodeERC1155TransferData(recipient, tokenId, amount);
+          const result = await smartAccountService.executeTransaction(
+            smartAccount,
+            privateKey,
+            selectedToken,
+            BigInt(0),
+            data
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to transfer tokens');
+          }
+
+          setTxHash(result.txHash || '');
+          setSuccess(true);
+          setToast({ message: 'Tokens transferred successfully!', type: 'success' });
+        }
+      } else if (transferType === 'private') {
+        // Send private transfer (VEIL only)
         const { privateTransferService } = await import('@/services/privateTransfer.service');
         const result = await privateTransferService.sendPrivateTransfer(
           privateKey,
@@ -70,35 +195,103 @@ export default function SendPage() {
         setTxHash(result.txHash || '');
         setSuccess(true);
       } else {
-        // Send standard transfer through smart account
-        const { smartAccountService } = await import('@/services/smartAccount.service');
-        const { ethers } = await import('ethers');
-        const { CONTRACT_ADDRESSES } = await import('@/config/constants');
-        const { VEIL_TOKEN_ABI } = await import('@/lib/abis');
+        // Determine if we're sending from EOA or Smart Account
+        const isEOA = selectedAccount === 'eoa' || 
+          (fromAddress.toLowerCase() === eoaAddress?.toLowerCase());
+        
+        if (isEOA) {
+          // Send directly from EOA
+          console.log('📤 [SendPage] Sending from EOA account directly');
+          
+          if (selectedToken === null) {
+            // Native token transfer
+            const result = await tokenService.transferNative(
+              privateKey,
+              recipient,
+              amount
+            );
 
-        // Encode transfer call
-        const iface = new ethers.Interface(VEIL_TOKEN_ABI);
-        const data = iface.encodeFunctionData('transfer', [
-          recipient,
-          ethers.parseEther(amount),
-        ]);
+            if (!result.success) {
+              throw new Error(result.error || 'Failed to send native token');
+            }
 
-        // Execute through smart account
-        const result = await smartAccountService.executeTransaction(
-          address,
-          privateKey,
-          CONTRACT_ADDRESSES.veilToken,
-          BigInt(0),
-          data
-        );
+            setTxHash(result.txHash || '');
+            setSuccess(true);
+            setToast({ message: 'Transaction sent successfully!', type: 'success' });
+          } else {
+            // ERC20 token transfer
+            if (!tokenInfo) {
+              throw new Error('Token information not available');
+            }
 
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to send transfer');
+            const result = await tokenService.transfer(
+              selectedToken,
+              privateKey,
+              recipient,
+              amount,
+              tokenInfo.decimals
+            );
+
+            if (!result.success) {
+              throw new Error(result.error || 'Failed to send tokens');
+            }
+
+            setTxHash(result.txHash || '');
+            setSuccess(true);
+            setToast({ message: 'Transaction sent successfully!', type: 'success' });
+          }
+        } else {
+          // Send through smart account
+          console.log('📤 [SendPage] Sending through smart account');
+          const { smartAccountService } = await import('@/services/smartAccount.service');
+          const { ethers } = await import('ethers');
+
+          if (!smartAccount || fromAddress.toLowerCase() !== smartAccount.toLowerCase()) {
+            throw new Error('Smart account address mismatch');
+          }
+
+          if (selectedToken === null) {
+            // Native token - send MNT through smart account
+            const tx = await smartAccountService.executeTransaction(
+              smartAccount,
+              privateKey,
+              recipient,
+              ethers.parseEther(amount),
+              '0x'
+            );
+
+            if (!tx.success) {
+              throw new Error(tx.error || 'Failed to send native token');
+            }
+
+            setTxHash(tx.txHash || '');
+            setSuccess(true);
+            setToast({ message: 'Transaction sent successfully!', type: 'success' });
+          } else {
+            // ERC20 token transfer through smart account
+            if (!tokenInfo) {
+              throw new Error('Token information not available');
+            }
+
+            const data = tokenService.encodeTransferData(recipient, amount, tokenInfo.decimals);
+
+            const result = await smartAccountService.executeTransaction(
+              smartAccount,
+              privateKey,
+              selectedToken,
+              BigInt(0),
+              data
+            );
+
+            if (!result.success) {
+              throw new Error(result.error || 'Failed to send transfer');
+            }
+
+            setTxHash(result.txHash || '');
+            setSuccess(true);
+            setToast({ message: 'Transaction sent successfully!', type: 'success' });
+          }
         }
-
-        setTxHash(result.txHash || '');
-        setSuccess(true);
-        setToast({ message: 'Transaction sent successfully!', type: 'success' });
       }
     } catch (err: any) {
       setError(err.message || 'Failed to send transaction');
@@ -167,36 +360,129 @@ export default function SendPage() {
 
       <div className="p-6 flex-1 overflow-auto">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Transfer Type Selector */}
-          <div className="space-y-3">
-            <label className="text-sm text-white/60 uppercase tracking-wider">Transfer Type</label>
-            <div className="grid grid-cols-2 gap-3">
+          {/* Token Type Selector */}
+          <div className="space-y-2">
+            <label className="text-sm text-white/60 uppercase tracking-wider">Asset Type</label>
+            <div className="grid grid-cols-4 gap-2">
               <button
                 type="button"
-                onClick={() => setTransferType('standard')}
-                className={`p-4 rounded-2xl border transition-all ${
-                  transferType === 'standard'
-                    ? 'bg-gradient-to-br from-white/20 to-white/10 border-white/40 scale-105'
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:scale-105'
+                onClick={() => {
+                  setTokenType('native');
+                  setSelectedToken(null);
+                  setTokenInfo(null);
+                }}
+                className={`p-2 rounded-lg border text-xs transition-all ${
+                  tokenType === 'native'
+                    ? 'bg-purple-500/30 border-purple-400/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10'
                 }`}
               >
-                <div className="text-base font-bold mb-1">Standard</div>
-                <div className="text-xs text-white/60">Public on-chain</div>
+                Native
               </button>
               <button
                 type="button"
-                onClick={() => setTransferType('private')}
-                className={`p-4 rounded-2xl border transition-all ${
-                  transferType === 'private'
-                    ? 'bg-gradient-to-br from-purple-500/30 to-blue-500/20 border-purple-400/40 scale-105'
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:scale-105'
+                onClick={() => {
+                  setTokenType('erc20');
+                  setSelectedToken(null);
+                  setTokenInfo(null);
+                }}
+                className={`p-2 rounded-lg border text-xs transition-all ${
+                  tokenType === 'erc20'
+                    ? 'bg-purple-500/30 border-purple-400/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10'
                 }`}
               >
-                <div className="text-base font-bold mb-1">🔒 Private</div>
-                <div className="text-xs text-white/60">Amount hidden</div>
+                ERC20
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTokenType('erc721');
+                  setSelectedToken(null);
+                  setTokenInfo(null);
+                }}
+                className={`p-2 rounded-lg border text-xs transition-all ${
+                  tokenType === 'erc721'
+                    ? 'bg-purple-500/30 border-purple-400/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10'
+                }`}
+              >
+                ERC721
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTokenType('erc1155');
+                  setSelectedToken(null);
+                  setTokenInfo(null);
+                }}
+                className={`p-2 rounded-lg border text-xs transition-all ${
+                  tokenType === 'erc1155'
+                    ? 'bg-purple-500/30 border-purple-400/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10'
+                }`}
+              >
+                ERC1155
               </button>
             </div>
           </div>
+
+          {/* Token Selector (for ERC20) */}
+          {accountAddress && tokenType === 'erc20' && (
+            <TokenSelector
+              selectedToken={selectedToken}
+              onTokenSelect={(address, info) => {
+                setSelectedToken(address);
+                setTokenInfo(info);
+              }}
+              accountAddress={accountAddress}
+            />
+          )}
+
+          {/* NFT Contract Address Input (for ERC721/ERC1155) */}
+          {(tokenType === 'erc721' || tokenType === 'erc1155') && (
+            <Input
+              label="NFT Contract Address"
+              value={selectedToken || ''}
+              onChange={(e) => setSelectedToken(e.target.value)}
+              placeholder="0x..."
+              required
+              className="bg-white/10 border-white/20 text-white"
+            />
+          )}
+
+          {/* Transfer Type Selector (only for ERC20 tokens) */}
+          {tokenType === 'erc20' && selectedToken !== null && (
+            <div className="space-y-3">
+              <label className="text-sm text-white/60 uppercase tracking-wider">Transfer Type</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTransferType('standard')}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    transferType === 'standard'
+                      ? 'bg-gradient-to-br from-white/20 to-white/10 border-white/40 scale-105'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 hover:scale-105'
+                  }`}
+                >
+                  <div className="text-base font-bold mb-1">Standard</div>
+                  <div className="text-xs text-white/60">Public on-chain</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTransferType('private')}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    transferType === 'private'
+                      ? 'bg-gradient-to-br from-purple-500/30 to-blue-500/20 border-purple-400/40 scale-105'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10 hover:scale-105'
+                  }`}
+                >
+                  <div className="text-base font-bold mb-1">🔒 Private</div>
+                  <div className="text-xs text-white/60">Amount hidden</div>
+                </button>
+              </div>
+            </div>
+          )}
 
           <Input
             label="Recipient Address"
@@ -207,20 +493,41 @@ export default function SendPage() {
             className="bg-white/10 border-white/20 text-white"
           />
 
-          <Input
-            label="Amount (VEIL)"
-            type="number"
-            step="0.0001"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-            required
-            className="bg-white/10 border-white/20 text-white"
-          />
+          {/* Token ID for NFTs */}
+          {(tokenType === 'erc721' || tokenType === 'erc1155') && (
+            <Input
+              label="Token ID"
+              value={tokenId}
+              onChange={(e) => setTokenId(e.target.value)}
+              placeholder="0"
+              required
+              className="bg-white/10 border-white/20 text-white"
+            />
+          )}
 
-          {transferType === 'private' && (
+          {/* Amount (for native/ERC20/ERC1155) */}
+          {tokenType !== 'erc721' && (
+            <Input
+              label={`Amount ${tokenInfo ? `(${tokenInfo.symbol})` : tokenType === 'native' ? '(MNT)' : ''}`}
+              type="number"
+              step="0.0001"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              required
+              className="bg-white/10 border-white/20 text-white"
+            />
+          )}
+
+          {transferType === 'private' && selectedToken === CONTRACT_ADDRESSES.VEIL_TOKEN && (
             <div className="bg-purple-500/20 border border-purple-400/30 rounded-lg p-3 text-xs text-white/80">
-              <strong>🔒 Privacy Mode:</strong> The transfer amount will be hidden on-chain. Only you and the recipient can see it.
+              <strong>🔒 Privacy Mode:</strong> The transfer amount will be hidden on-chain. Only you and the recipient can see it. (VEIL only)
+            </div>
+          )}
+          
+          {transferType === 'private' && selectedToken !== CONTRACT_ADDRESSES.VEIL_TOKEN && selectedToken !== null && (
+            <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-3 text-xs text-yellow-300">
+              <strong>⚠️ Note:</strong> Private transfers are only available for VEIL tokens. Please select VEIL token for private transfers.
             </div>
           )}
 

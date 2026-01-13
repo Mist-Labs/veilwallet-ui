@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { smartAccountService } from './smartAccount.service';
+import { createAccountLookup, listEthereumKeys } from '@/utils/ethereumKeyStorage';
 
 export interface AccountProtectionStatus {
   isProtected: boolean;
@@ -56,10 +57,62 @@ class AccountProtectionService {
 
       console.log('✅ [AccountProtection] Smart account deployed at:', result.address);
       
-      // Store smart account address
-      localStorage.setItem('veilwallet_address', result.address!);
+      // IMPORTANT: Preserve the original address if it was an EOA
+      // Only update veilwallet_address if it's not already set, or if it's the same as EOA (meaning it was stored as EOA)
+      const existingAddress = localStorage.getItem('veilwallet_address');
+      const existingEoa = localStorage.getItem('veilwallet_eoa');
+      
+      console.log('📝 [AccountProtection] Existing address in storage:', existingAddress);
+      console.log('📝 [AccountProtection] Existing EOA in storage:', existingEoa);
+      console.log('📝 [AccountProtection] New EOA from wallet:', eoaAddress);
+      
+      // If existing address is the same as EOA, it means the wallet was stored with EOA address
+      // In this case, we should update it to smart account address
+      // But if existing address is different from EOA, it might already be a smart account
+      if (existingAddress && existingAddress.toLowerCase() === eoaAddress.toLowerCase()) {
+        console.log('🔄 [AccountProtection] Existing address is EOA, updating to smart account');
+        localStorage.setItem('veilwallet_address', result.address!);
+      } else if (!existingAddress) {
+        // No address stored, store the smart account address
+        console.log('💾 [AccountProtection] No existing address, storing smart account address');
+        localStorage.setItem('veilwallet_address', result.address!);
+      } else {
+        // Address exists and is different from EOA - might already be a smart account
+        console.log('⚠️ [AccountProtection] Existing address is different from EOA, preserving it');
+        // Still update to new smart account if it's different
+        if (existingAddress.toLowerCase() !== result.address!.toLowerCase()) {
+          console.log('🔄 [AccountProtection] Updating to new smart account address');
+          localStorage.setItem('veilwallet_address', result.address!);
+        }
+      }
+      
+      // Always store EOA for reference
       localStorage.setItem('veilwallet_eoa', eoaAddress);
       localStorage.setItem('veilwallet_protected', 'true');
+      
+      console.log('✅ [AccountProtection] Final stored addresses:');
+      console.log('   - Smart Account:', localStorage.getItem('veilwallet_address'));
+      console.log('   - EOA:', localStorage.getItem('veilwallet_eoa'));
+      
+      // Create reverse lookup for smart account address so unlock can find the key
+      console.log('🔗 [AccountProtection] Creating reverse lookup for smart account address...');
+      try {
+        const allKeys = await listEthereumKeys();
+        const keyForEoa = allKeys.find(k => 
+          k.address.toLowerCase() === eoaAddress.toLowerCase() || 
+          k.accountAddress?.toLowerCase() === eoaAddress.toLowerCase()
+        );
+        
+        if (keyForEoa) {
+          await createAccountLookup(result.address!, keyForEoa.id);
+          console.log('✅ [AccountProtection] Reverse lookup created for smart account');
+        } else {
+          console.warn('⚠️ [AccountProtection] Could not find key for EOA to create reverse lookup');
+        }
+      } catch (lookupError) {
+        console.error('❌ [AccountProtection] Failed to create reverse lookup:', lookupError);
+        // Don't fail the whole operation if lookup creation fails
+      }
       
       console.log('✅ [AccountProtection] Protection complete!');
 

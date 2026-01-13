@@ -20,6 +20,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'removeStorage') {
+    chrome.storage.local.remove(request.key, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+
   // Handle RPC requests from dApps
   if (request.type === 'VEILWALLET_RPC') {
     handleRPCRequest(request, sender, sendResponse);
@@ -32,68 +39,130 @@ async function handleRPCRequest(request, sender, sendResponse) {
   const { method, params } = request;
 
   try {
-    switch (method) {
-      case 'eth_requestAccounts':
-      case 'eth_accounts': {
-        // Check if wallet is unlocked
-        const unlocked = sessionStorage.getItem('veilwallet_unlocked') === 'true';
-        if (!unlocked) {
-          // Open popup to unlock
-          chrome.action.openPopup();
-          sendResponse({ error: 'Wallet is locked' });
-          return;
-        }
+    // Get wallet state
+    const storage = await new Promise((resolve) => {
+      chrome.storage.local.get([
+        'veilwallet_address', 
+        'veilwallet_eoa', 
+        'veilwallet_selected_account',
+        'veilwallet_unlocked'
+      ], resolve);
+    });
 
-        // Get wallet address
-        const address = localStorage.getItem('veilwallet_address');
-        if (address) {
-          sendResponse({ accounts: [address] });
-        } else {
-          sendResponse({ accounts: [] });
-        }
-        break;
-      }
+    const unlocked = storage.veilwallet_unlocked === 'true';
+    const smartAccount = storage.veilwallet_address;
+    const eoa = storage.veilwallet_eoa;
+    const selected = storage.veilwallet_selected_account || 'smart';
+    const accountAddress = (selected === 'smart' && smartAccount) 
+      ? smartAccount 
+      : (eoa || smartAccount);
 
-      case 'eth_sendTransaction': {
-        // Open popup for transaction approval
+    // Methods that require user interaction (signing/transactions)
+    const requiresApproval = ['eth_sendTransaction', 'eth_sign', 'personal_sign', 
+      'eth_signTypedData', 'eth_signTypedData_v3', 'eth_signTypedData_v4'].includes(method);
+    
+    if (requiresApproval) {
+      if (!unlocked) {
         chrome.action.openPopup();
-        // Store pending transaction
-        const txId = Date.now().toString();
-        await chrome.storage.local.set({
-          [`pending_tx_${txId}`]: {
-            ...params[0],
-            origin: sender.origin || sender.url,
-            timestamp: Date.now(),
-          }
-        });
-        sendResponse({ txId });
-        break;
+        sendResponse({ error: 'Wallet is locked' });
+        return;
       }
 
-      case 'personal_sign':
-      case 'eth_sign':
-      case 'eth_signTypedData_v4': {
-        // Open popup for signature approval
+      // Store pending request and open approval page
+      const requestId = `${method}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await chrome.storage.local.set({
+        [`pending_request_${requestId}`]: {
+          method,
+          params,
+          origin: sender.origin || sender.url,
+          timestamp: Date.now(),
+          accountAddress,
+        }
+      });
+
+      // Open approval page
+      chrome.action.openPopup();
+      sendResponse({ requestId, requiresApproval: true });
+      return;
+    }
+
+    // Methods that need account info
+    if (method === 'eth_requestAccounts' || method === 'eth_accounts') {
+      if (!unlocked) {
         chrome.action.openPopup();
-        const signId = Date.now().toString();
-        await chrome.storage.local.set({
-          [`pending_sign_${signId}`]: {
-            method,
-            params,
-            origin: sender.origin || sender.url,
-            timestamp: Date.now(),
-          }
-        });
-        sendResponse({ signId });
-        break;
+        sendResponse({ error: 'Wallet is locked' });
+        return;
       }
 
-      default:
-        sendResponse({ error: 'Method not supported' });
+      const accounts = [];
+      if (selected === 'smart' && smartAccount) {
+        accounts.push(smartAccount);
+        if (eoa && eoa.toLowerCase() !== smartAccount.toLowerCase()) {
+          accounts.push(eoa);
+        }
+      } else if (selected === 'eoa' && eoa) {
+        accounts.push(eoa);
+        if (smartAccount && smartAccount.toLowerCase() !== eoa.toLowerCase()) {
+          accounts.push(smartAccount);
+        }
+      } else {
+        if (smartAccount) accounts.push(smartAccount);
+        if (eoa && (!smartAccount || eoa.toLowerCase() !== smartAccount.toLowerCase())) {
+          accounts.push(eoa);
+        }
+      }
+      
+      sendResponse({ accounts });
+      return;
+    }
+
+    // Chain ID
+    if (method === 'eth_chainId') {
+      sendResponse({ result: '0x138b' }); // 5003 in hex
+      return;
+    }
+
+    if (method === 'net_version') {
+      sendResponse({ result: '5003' });
+      return;
+    }
+
+    // For all other read-only methods, forward to RPC provider
+    const rpcUrl = 'https://rpc.sepolia.mantle.xyz';
+    
+    const rpcResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method,
+        params: params || [],
+      }),
+    });
+
+    const rpcData = await rpcResponse.json();
+    
+    if (rpcData.error) {
+      sendResponse({ error: rpcData.error.message || 'RPC error' });
+    } else {
+      sendResponse({ result: rpcData.result });
     }
   } catch (error) {
     console.error('Error handling RPC request:', error);
-    sendResponse({ error: error.message });
+    sendResponse({ error: error.message || 'Internal error' });
   }
 }
+
+// Listen for approval responses from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'VEILWALLET_RPC_RESPONSE') {
+    // Store response for the request
+    chrome.storage.local.set({
+      [`rpc_response_${message.requestId}`]: message.result || message.error
+    });
+    sendResponse({ success: true });
+  }
+  return true;
+});
 

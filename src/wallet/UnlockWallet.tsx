@@ -14,25 +14,57 @@ export default function UnlockWallet() {
     setLoading(true);
 
     try {
-      const storedAddress = localStorage.getItem('veilwallet_address');
-
-      if (!storedAddress) {
+      console.log('🔓 [UnlockWallet] Starting unlock process...');
+      
+      // First, try to get the EOA address (this is what the key is stored with)
+      let lookupAddress = localStorage.getItem('veilwallet_eoa');
+      const smartAccountAddress = localStorage.getItem('veilwallet_address');
+      
+      console.log('🔍 [UnlockWallet] EOA from storage:', lookupAddress);
+      console.log('🔍 [UnlockWallet] Smart account from storage:', smartAccountAddress);
+      
+      if (!lookupAddress && !smartAccountAddress) {
+        console.error('❌ [UnlockWallet] No wallet found in storage');
         setError('No wallet found. Please create a new wallet.');
         setLoading(false);
         return;
       }
 
-      const keyResult = await keyService.getEthereumKeyByAccount(storedAddress, password);
+      // If no EOA found, try using smart account address (for backwards compatibility)
+      if (!lookupAddress) {
+        console.log('⚠️ [UnlockWallet] No EOA found, using smart account address');
+        lookupAddress = smartAccountAddress!;
+      }
+
+      console.log('🔑 [UnlockWallet] Attempting to retrieve key with address:', lookupAddress);
+      const keyResult = await keyService.getEthereumKeyByAccount(lookupAddress!, password);
       
       if (!keyResult.success || !keyResult.data) {
+        console.error('❌ [UnlockWallet] Key retrieval failed:', keyResult.error);
+        
+        // If lookup by EOA failed and we have a smart account address, try that
+        if (lookupAddress !== smartAccountAddress && smartAccountAddress) {
+          console.log('🔄 [UnlockWallet] Retrying with smart account address...');
+          const retryResult = await keyService.getEthereumKeyByAccount(smartAccountAddress, password);
+          
+          if (retryResult.success && retryResult.data) {
+            console.log('✅ [UnlockWallet] Key found using smart account address');
+            sessionStorage.setItem('veilwallet_unlocked', 'true');
+            window.location.href = 'popup.html';
+            return;
+          }
+        }
+        
         setError(keyResult.error || 'Invalid password');
         setLoading(false);
         return;
       }
 
+      console.log('✅ [UnlockWallet] Key retrieved successfully');
       sessionStorage.setItem('veilwallet_unlocked', 'true');
       window.location.href = 'popup.html';
     } catch (err) {
+      console.error('❌ [UnlockWallet] Unlock error:', err);
       setError(err instanceof Error ? err.message : 'Failed to unlock wallet');
       setLoading(false);
     }

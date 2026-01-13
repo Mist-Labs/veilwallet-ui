@@ -21,6 +21,7 @@ export default defineConfig({
         receive: resolve(__dirname, 'receive.html'),
         history: resolve(__dirname, 'history.html'),
         settings: resolve(__dirname, 'settings.html'),
+        'approve-transaction': resolve(__dirname, 'approve-transaction.html'),
       },
       output: {
         entryFileNames: 'assets/[name].js',

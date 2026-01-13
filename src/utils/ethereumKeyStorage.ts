@@ -193,6 +193,7 @@ export async function getEthereumPrivateKey(keyId: string): Promise<StoredEthere
 
 /**
  * Get Ethereum key by account address
+ * Supports lookup by both EOA address and smart account address
  */
 export async function getEthereumKeyByAccount(accountAddress: string): Promise<StoredEthereumKey | null> {
   const storage = getStorageAPI();
@@ -200,15 +201,46 @@ export async function getEthereumKeyByAccount(accountAddress: string): Promise<S
     throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
   }
 
+  // First, try direct lookup
   const accountKey = `veilwallet_eth_account_${accountAddress}`;
   const accountResult = await storage.local.get(accountKey);
   const keyId = accountResult[accountKey];
 
-  if (!keyId) {
-    return null;
+  if (keyId) {
+    return getEthereumPrivateKey(keyId);
   }
 
-  return getEthereumPrivateKey(keyId);
+  // If not found, search through all keys to find a match
+  // This handles cases where the key was stored with EOA but we're looking up by smart account
+  const allKeys = await listEthereumKeys();
+  for (const key of allKeys) {
+    if (key.address.toLowerCase() === accountAddress.toLowerCase() || 
+        key.accountAddress?.toLowerCase() === accountAddress.toLowerCase()) {
+      const keyData = await getEthereumPrivateKey(key.id);
+      if (keyData) {
+        // Create reverse lookup for future queries
+        const reverseKey = `veilwallet_eth_account_${accountAddress}`;
+        await storage.local.set({ [reverseKey]: key.id });
+        return keyData;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Create a reverse lookup for an account address to a key ID
+ * Useful when adding smart account address lookup after protection is enabled
+ */
+export async function createAccountLookup(accountAddress: string, keyId: string): Promise<void> {
+  const storage = getStorageAPI();
+  if (!storage) {
+    throw new Error('Storage API not available. Enable dev mode by setting NEXT_PUBLIC_DEV_MODE=true or window.__VEILWALLET_DEV_MODE__ = true');
+  }
+
+  const accountKey = `veilwallet_eth_account_${accountAddress}`;
+  await storage.local.set({ [accountKey]: keyId });
 }
 
 /**

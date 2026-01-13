@@ -80,7 +80,7 @@ class WalletService {
     to: string,
     amount: string
   ): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    try {
+      try {
       const wallet = new ethers.Wallet(fromPrivateKey, this.provider);
       const token = this.tokenContract.connect(wallet);
 
