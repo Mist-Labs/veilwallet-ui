@@ -19,42 +19,57 @@ export default function PopupApp() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   useEffect(() => {
-    // Check if user has a wallet
-    const address = localStorage.getItem('veilwallet_address');
-    const eoa = localStorage.getItem('veilwallet_eoa');
-    const unlocked = sessionStorage.getItem('veilwallet_unlocked') === 'true';
-    const savedAccount = localStorage.getItem('veilwallet_selected_account') as 'eoa' | 'smart' | null;
-    
-    if (!address && !eoa) {
-      // No wallet, redirect to create
-      window.location.href = 'wallet-create.html';
-    } else if (!unlocked) {
-      // Wallet exists but locked, redirect to unlock
-      window.location.href = 'wallet-unlock.html';
-    } else {
-      // Wallet is unlocked, show dashboard
-      setEoaAddress(eoa || '');
-      setSmartAccountAddress(address || '');
+    const loadAccounts = async () => {
+      const unlocked = sessionStorage.getItem('veilwallet_unlocked') === 'true';
+      
+      if (!unlocked) {
+        window.location.href = 'wallet-unlock.html';
+        return;
+      }
+
+      // Load accounts using new account service
+      const { walletAccountService } = await import('@/services/walletAccount.service');
+      const activeAccount = await walletAccountService.getActiveAccount();
+      
+      if (!activeAccount) {
+        // No accounts, redirect to create
+        window.location.href = 'wallet-create.html';
+        return;
+      }
+
+      // Set account addresses
+      setEoaAddress(activeAccount.eoaAddress);
+      setSmartAccountAddress(activeAccount.smartAccountAddress || '');
+      
+      // Check protection status FIRST (before setting selected account)
+      const isDeployed = activeAccount.isSmartAccountDeployed;
+      setIsProtected(isDeployed);
+      // Show banner if smart account exists but not deployed
+      setShowProtectionBanner(!!activeAccount.smartAccountAddress && !isDeployed);
       
       // Determine which account to show
-      let initialAccount: 'eoa' | 'smart' = 'smart';
+      const savedAccount = localStorage.getItem('veilwallet_selected_account') as 'eoa' | 'smart' | null;
+      let initialAccount: 'eoa' | 'smart' = 'eoa'; // Default to EOA if not deployed
+      
       if (savedAccount) {
         initialAccount = savedAccount;
-      } else if (address && eoa) {
-        // Both exist, default to smart account
+      } else if (activeAccount.smartAccountAddress && activeAccount.isSmartAccountDeployed) {
         initialAccount = 'smart';
-      } else if (eoa) {
-        // Only EOA exists
+      } else {
         initialAccount = 'eoa';
       }
       
       setSelectedAccount(initialAccount);
-      const displayAddress = initialAccount === 'smart' && address ? address : (eoa || address || '');
+      const displayAddress = initialAccount === 'smart' && activeAccount.smartAccountAddress 
+        ? activeAccount.smartAccountAddress 
+        : activeAccount.eoaAddress;
       setWalletAddress(displayAddress);
-      checkProtectionStatus();
-      loadAllBalances();
+      
+      loadBalances(displayAddress);
       setLoading(false);
-    }
+    };
+
+    loadAccounts();
   }, []);
   
   useEffect(() => {
@@ -76,11 +91,19 @@ export default function PopupApp() {
     }
   }, [selectedAccount, smartAccountAddress, eoaAddress, loading]);
 
-  const checkProtectionStatus = async () => {
-    const { accountProtectionService } = await import('@/services/accountProtection.service');
-    const shouldShow = accountProtectionService.shouldShowProtectionPrompt();
-    setShowProtectionBanner(shouldShow);
-    setIsProtected(!shouldShow);
+  const checkProtectionStatus = async (address?: string) => {
+    const { walletAccountService } = await import('@/services/walletAccount.service');
+    const activeAccount = await walletAccountService.getActiveAccount();
+    
+    if (activeAccount) {
+      const isDeployed = activeAccount.isSmartAccountDeployed;
+      setIsProtected(isDeployed);
+      // Show banner if smart account exists but not deployed
+      setShowProtectionBanner(!!activeAccount.smartAccountAddress && !isDeployed);
+    } else {
+      setIsProtected(false);
+      setShowProtectionBanner(false);
+    }
   };
 
   const handleProtect = () => {
@@ -88,86 +111,57 @@ export default function PopupApp() {
   };
 
   const handlePasswordConfirm = async (password: string) => {
-    console.log('🔐 [PopupApp] Starting protection process...');
+    console.log('🔐 [PopupApp] Starting smart account deployment...');
     try {
-      const { keyService } = await import('@/services/key.service');
-      const storedAddress = localStorage.getItem('veilwallet_address');
-      let eoaAddress = localStorage.getItem('veilwallet_eoa');
+      const { walletAccountService } = await import('@/services/walletAccount.service');
+      const activeAccount = await walletAccountService.getActiveAccount();
       
-      console.log('📍 [PopupApp] Stored Address:', storedAddress);
-      console.log('📍 [PopupApp] EOA Address from storage:', eoaAddress);
-      
-      if (!storedAddress) {
-        console.error('❌ [PopupApp] No wallet address found');
-        setToast({ message: 'Wallet address not found', type: 'error' });
+      if (!activeAccount) {
+        setToast({ message: 'No active account found', type: 'error' });
         setShowPasswordModal(false);
         return;
       }
 
-      // CRITICAL: Keys are always stored with EOA address, not smart account address
-      // If EOA is not stored, the stored address might be the EOA itself (old wallets)
-      // OR we need to look it up from the key storage
-      if (!eoaAddress) {
-        console.log('🔍 [PopupApp] EOA not stored, checking if stored address is EOA...');
-        
-        // Try to get key using stored address (might be EOA for old wallets)
-        let keyResult = await keyService.getEthereumKeyByAccount(storedAddress, password);
-        
-        if (keyResult.success && keyResult.data) {
-          // Found the key! The stored address is likely the EOA
-          eoaAddress = keyResult.data.address;
-          console.log('✅ [PopupApp] Stored address is EOA:', eoaAddress);
-          localStorage.setItem('veilwallet_eoa', eoaAddress);
-          
-          // If stored address was EOA, we'll update it to smart account after deployment
-          // For now, use the EOA to get the private key
-        } else {
-          console.error('❌ [PopupApp] Could not find key with stored address:', keyResult.error);
-          setToast({ message: 'Could not find wallet keys. Please restore your wallet.', type: 'error' });
-          setShowPasswordModal(false);
-          return;
-        }
-      }
-
-      // Always use EOA address to get the private key (keys are stored with EOA)
-      console.log('🔑 [PopupApp] Retrieving private key using EOA address:', eoaAddress);
-      const keyResult = await keyService.getEthereumKeyByAccount(eoaAddress!, password);
-      
-      if (!keyResult.success || !keyResult.data) {
-        console.error('❌ [PopupApp] Failed to get private key:', keyResult.error);
-        setToast({ message: 'Invalid password', type: 'error' });
+      if (activeAccount.isSmartAccountDeployed) {
+        setToast({ message: 'Smart account already deployed', type: 'info' });
         setShowPasswordModal(false);
+        setIsProtected(true);
         return;
       }
 
-      console.log('✅ [PopupApp] Private key retrieved successfully');
-      console.log('🚀 [PopupApp] Deploying smart account...');
+      console.log('🚀 [PopupApp] Deploying smart account for:', activeAccount.eoaAddress);
 
-      const { accountProtectionService } = await import('@/services/accountProtection.service');
-      const result = await accountProtectionService.protectAccount(keyResult.data.privateKey);
+      // Deploy smart account (service handles password verification)
+      const result = await walletAccountService.deploySmartAccount(activeAccount.id, password);
 
       if (result.success) {
         console.log('✅ [PopupApp] Smart account deployed successfully!');
-        setToast({ message: '✅ Privacy protection enabled!', type: 'success' });
+        setToast({ message: '✅ Smart account deployed!', type: 'success' });
         setShowProtectionBanner(false);
         setIsProtected(true);
         setShowPasswordModal(false);
+        
+        // Update local state
+        const updatedAccount = await walletAccountService.getActiveAccount();
+        if (updatedAccount) {
+          setSmartAccountAddress(updatedAccount.smartAccountAddress || '');
+        }
+        
+        // Reload to show updated status
         setTimeout(() => window.location.reload(), 1500);
       } else {
         console.error('❌ [PopupApp] Deployment failed:', result.error);
-        setToast({ message: result.error || 'Failed to enable protection', type: 'error' });
+        setToast({ message: result.error || 'Failed to deploy smart account', type: 'error' });
         setShowPasswordModal(false);
       }
     } catch (error: any) {
-      console.error('❌ [PopupApp] Protection error:', error);
+      console.error('❌ [PopupApp] Deployment error:', error);
       setToast({ message: error.message || 'An error occurred', type: 'error' });
       setShowPasswordModal(false);
     }
   };
 
   const handleDismiss = () => {
-    const { accountProtectionService } = require('@/services/accountProtection.service');
-    accountProtectionService.dismissProtectionPrompt();
     setShowProtectionBanner(false);
   };
 
@@ -294,6 +288,29 @@ export default function PopupApp() {
         <ProtectionBanner onProtect={handleProtect} onDismiss={handleDismiss} />
       )}
 
+      {/* Deploy Smart Account Banner (if not deployed) */}
+      {((smartAccountAddress && smartAccountAddress.trim() !== '') || showProtectionBanner) && !isProtected && (
+        <div className="mx-4 mt-4 p-3 bg-yellow-500/20 border border-yellow-400/30 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-yellow-300 mb-1">Smart Account Not Deployed</p>
+              <p className="text-xs text-yellow-200/80 mb-2">
+                Deploy your smart account to enable advanced features. Your EOA needs MNT for gas.
+              </p>
+              <p className="text-xs text-yellow-200/60">
+                💡 Tip: You can send funds to the smart account address before deployment - they'll be available after deployment.
+              </p>
+            </div>
+            <button
+              onClick={handleProtect}
+              className="ml-3 px-3 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/40 text-yellow-200 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+            >
+              Deploy Now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Balance Section */}
       <div className="p-6 flex-1 overflow-auto">
         {/* Main Balance Card */}
@@ -412,8 +429,8 @@ export default function PopupApp() {
         isOpen={showPasswordModal}
         onClose={() => setShowPasswordModal(false)}
         onConfirm={handlePasswordConfirm}
-        title="Enable Protection"
-        description="Enter your password to deploy smart account and enable privacy features"
+        title="Deploy Smart Account"
+        description="Enter your password to deploy your smart account. You'll need MNT for gas fees."
       />
 
       {/* Toast Notification */}

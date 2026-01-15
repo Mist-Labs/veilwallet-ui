@@ -199,6 +199,14 @@ export default function SendPage() {
         const isEOA = selectedAccount === 'eoa' || 
           (fromAddress.toLowerCase() === eoaAddress?.toLowerCase());
         
+        console.log('🔍 [SendPage] Account selection:', {
+          selectedAccount,
+          fromAddress,
+          eoaAddress,
+          smartAccount,
+          isEOA,
+        });
+        
         if (isEOA) {
           // Send directly from EOA
           console.log('📤 [SendPage] Sending from EOA account directly');
@@ -243,12 +251,33 @@ export default function SendPage() {
         } else {
           // Send through smart account
           console.log('📤 [SendPage] Sending through smart account');
+          console.log('📤 [SendPage] Smart account address:', smartAccount);
+          console.log('📤 [SendPage] From address:', fromAddress);
+          console.log('📤 [SendPage] Selected account:', selectedAccount);
+          
           const { smartAccountService } = await import('@/services/smartAccount.service');
           const { ethers } = await import('ethers');
 
-          if (!smartAccount || fromAddress.toLowerCase() !== smartAccount.toLowerCase()) {
-            throw new Error('Smart account address mismatch');
+          if (!smartAccount) {
+            throw new Error('Smart account address not found. Please deploy your smart account first.');
           }
+          
+          if (fromAddress.toLowerCase() !== smartAccount.toLowerCase()) {
+            console.error('❌ [SendPage] Address mismatch:', {
+              fromAddress,
+              smartAccount,
+              selectedAccount,
+            });
+            throw new Error(`Smart account address mismatch. Expected ${smartAccount}, got ${fromAddress}`);
+          }
+          
+          // Verify smart account is deployed
+          const isDeployed = await smartAccountService.isDeployed(smartAccount);
+          if (!isDeployed) {
+            throw new Error('Smart account is not deployed yet. Please deploy it first from the main wallet screen.');
+          }
+          
+          console.log('✅ [SendPage] Smart account verified and deployed');
 
           if (selectedToken === null) {
             // Native token - send MNT through smart account

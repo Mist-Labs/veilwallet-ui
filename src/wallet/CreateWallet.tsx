@@ -45,45 +45,35 @@ export default function CreateWallet() {
         return;
       }
 
-      const { address: eoaAddress, mnemonic: mnemonicPhrase, keyId } = keyResult.data;
+      const { address: eoaAddress, mnemonic: mnemonicPhrase } = keyResult.data;
       console.log('✅ [CreateWallet] Key generated. EOA:', eoaAddress);
       
-      // Step 2: Retrieve the private key to deploy smart account
-      console.log('🔑 [CreateWallet] Retrieving private key for deployment...');
-      const privateKeyResult = await keyService.getEthereumPrivateKey(keyId, password);
+      // Step 2: Create wallet account (EOA only, no deployment)
+      console.log('📝 [CreateWallet] Creating wallet account...');
+      const { walletAccountService } = await import('@/services/walletAccount.service');
+      const accountResult = await walletAccountService.createAccount(password);
       
-      if (!privateKeyResult.success || !privateKeyResult.data) {
-        console.error('❌ [CreateWallet] Failed to retrieve private key:', privateKeyResult.error);
-        setError('Failed to retrieve private key');
-        setStep('password');
-        return;
-      }
-      
-      const privateKey = privateKeyResult.data;
-      console.log('✅ [CreateWallet] Private key retrieved');
-      
-      // Step 3: Deploy smart account
-      console.log('🚀 [CreateWallet] Deploying smart account...');
-      const { smartAccountService } = await import('@/services/smartAccount.service');
-      const deployResult = await smartAccountService.deployAccount(privateKey, eoaAddress);
-      
-      if (!deployResult.success || !deployResult.address) {
-        console.error('❌ [CreateWallet] Smart account deployment failed:', deployResult.error);
-        setError(deployResult.error || 'Failed to deploy smart account');
+      if (!accountResult.success || !accountResult.account) {
+        console.error('❌ [CreateWallet] Account creation failed:', accountResult.error);
+        setError(accountResult.error || 'Failed to create account');
         setStep('password');
         return;
       }
 
-      console.log('✅ [CreateWallet] Smart account deployed at:', deployResult.address);
+      const account = accountResult.account;
+      console.log('✅ [CreateWallet] Account created:', account);
+      console.log('✅ [CreateWallet] Smart account address (predicted):', account.smartAccountAddress);
+      console.log('✅ [CreateWallet] Smart account deployed:', account.isSmartAccountDeployed);
       
-      // Store both EOA and smart account addresses
-      setWalletAddress(deployResult.address);
+      // Set as active account
+      await walletAccountService.setActiveAccount(account.id);
+      
+      // Store for display
+      setWalletAddress(account.smartAccountAddress || eoaAddress);
       setMnemonic(mnemonicPhrase);
-      localStorage.setItem('veilwallet_address', deployResult.address);
-      localStorage.setItem('veilwallet_eoa', eoaAddress);
-      localStorage.setItem('veilwallet_protected', 'true'); // Mark as protected since we just deployed smart account
       
       console.log('✅ [CreateWallet] Wallet creation complete!');
+      console.log('ℹ️ [CreateWallet] Smart account will be deployed when you have gas (MNT)');
       setStep('mnemonic');
     } catch (err) {
       console.error('❌ [CreateWallet] Wallet creation error:', err);
@@ -94,19 +84,18 @@ export default function CreateWallet() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    // Set as unlocked (using same password for all accounts)
     sessionStorage.setItem('veilwallet_unlocked', 'true');
-    // Ensure EOA is still stored
-    const eoaFromStorage = localStorage.getItem('veilwallet_eoa');
-    if (!eoaFromStorage) {
-      console.error('EOA not found in storage, attempting to restore');
-      // This shouldn't happen, but as a safety measure
-      const smartAddress = localStorage.getItem('veilwallet_address');
-      if (smartAddress) {
-        // We can derive EOA from the wallet creation flow
-        console.log('Smart account:', smartAddress);
-      }
+    
+    // Set the newly created account as active
+    const { walletAccountService } = await import('@/services/walletAccount.service');
+    const accounts = await walletAccountService.getAllAccounts();
+    const newAccount = accounts[accounts.length - 1]; // Last created account
+    if (newAccount) {
+      await walletAccountService.setActiveAccount(newAccount.id);
     }
+    
     window.location.href = 'popup.html';
   };
 
@@ -152,7 +141,15 @@ export default function CreateWallet() {
         <Card className="w-full max-w-sm">
           <div className="space-y-4 text-center">
             <h2 className="text-2xl font-bold">Wallet Created!</h2>
-            <p className="text-sm break-all font-mono">{walletAddress}</p>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600 dark:text-gray-400">Smart Account Address (predicted):</p>
+              <p className="text-sm break-all font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded">
+                {walletAddress}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                ⚠️ Smart account not deployed yet. Deploy it when you have MNT for gas.
+              </p>
+            </div>
             <Button onClick={handleContinue} className="w-full">
               Open Wallet
             </Button>

@@ -43,9 +43,10 @@ class AccountProtectionService {
       const eoaAddress = wallet.address;
       console.log('📍 [AccountProtection] EOA Address:', eoaAddress);
 
-      // Deploy smart account
-      console.log('🚀 [AccountProtection] Calling smartAccountService.deployAccount...');
-      const result = await smartAccountService.deployAccount(privateKey, eoaAddress);
+          // Deploy smart account
+          console.log('🚀 [AccountProtection] Calling smartAccountService.deployAccount...');
+          // Pass ownerAddress explicitly (salt will default to hash of owner address)
+          const result = await smartAccountService.deployAccount(privateKey, eoaAddress);
 
       if (!result.success) {
         console.error('❌ [AccountProtection] Deployment failed:', result.error);
